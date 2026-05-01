@@ -1,0 +1,603 @@
+//@version=6
+indicator("VWAP Pro Institutional Suite", shorttitle="VWAP Pro", overlay=true, scale=scale.none, format=format.price, max_labels_count=500)
+
+//------------------------------------------------------------------------------
+// Input groups
+//------------------------------------------------------------------------------
+grpCore      = "Core VWAP"
+grpAnchor    = "Anchored VWAP"
+grpBands     = "Deviation Bands"
+grpState     = "Market State Engine"
+grpSignals   = "Signal Engine"
+grpFilters   = "Institutional Filters"
+grpEma       = "EMA Trend Filter"
+grpRsi       = "RSI Filter"
+grpSessions  = "Session Filter"
+grpVisuals   = "Visual Design"
+grpDashboard = "Dashboard"
+
+//------------------------------------------------------------------------------
+// Core inputs
+//------------------------------------------------------------------------------
+showSessionVwap   = input.bool(true, "Show Session VWAP", group=grpCore)
+showSignals       = input.bool(true, "Show Signals", group=grpCore)
+sessionResetBasis = input.string("Trading Session", "VWAP Reset Basis", options=["Trading Session", "Calendar Day"], group=grpCore)
+
+enableAnchoredVwap = input.bool(false, "Enable Anchored VWAP", group=grpAnchor)
+showAnchoredVwap   = input.bool(true, "Show Anchored VWAP", group=grpAnchor)
+anchorMode         = input.string("Session Open", "Anchor Type", options=["Session Open", "Previous Day High", "Previous Day Low", "Manual Time"], group=grpAnchor)
+manualAnchorTime   = input.time(1767225600000, "Manual Anchor Time", group=grpAnchor)
+
+showBands       = input.bool(true, "Show Deviation Bands", group=grpBands)
+showBandShading = input.bool(true, "Shade Band Zones", group=grpBands)
+band1Mult       = input.float(1.0, "Band 1 Multiplier", minval=0.1, step=0.1, group=grpBands)
+band2Mult       = input.float(2.0, "Band 2 Multiplier", minval=0.1, step=0.1, group=grpBands)
+band3Mult       = input.float(3.0, "Band 3 Multiplier", minval=0.1, step=0.1, group=grpBands)
+
+showStateBackground = input.bool(true, "Show Market State Background", group=grpState)
+stateSlopeLookback  = input.int(5, "VWAP Slope Lookback", minval=1, group=grpState)
+stateSlopeThreshold = input.float(0.03, "VWAP Slope Threshold (ATR-Normalized)", minval=0.001, step=0.001, group=grpState)
+stateCrossLookback  = input.int(20, "Range Detection Cross Lookback", minval=5, group=grpState)
+rangeCrossThreshold = input.int(3, "Range Detection Min Crosses", minval=1, group=grpState)
+
+enableContinuation     = input.bool(true, "Enable Continuation Signals", group=grpSignals)
+enableMeanReversion    = input.bool(true, "Enable Mean Reversion Signals", group=grpSignals)
+enableReclaim          = input.bool(true, "Enable VWAP Reclaim Signals", group=grpSignals)
+enableBounce           = input.bool(true, "Enable VWAP Bounce Signals", group=grpSignals)
+showPrimarySignals     = input.bool(true, "Show BUY/SELL Signals", group=grpSignals)
+showSetupTags          = input.bool(true, "Show Setup Tags", group=grpSignals)
+useBiasFallbackSignals = input.bool(true, "Use Bias Fallback Signals", group=grpSignals)
+signalCooldownBars     = input.int(6, "Signal Cooldown Bars", minval=1, group=grpSignals)
+reclaimHoldBars        = input.int(2, "Reclaim Hold Candles", minval=1, maxval=10, group=grpSignals)
+strongBodyRatio        = input.float(0.6, "Strong Candle Body Ratio", minval=0.3, maxval=0.95, step=0.05, group=grpSignals)
+rejectionWickRatio     = input.float(1.2, "Rejection Wick / Body Ratio", minval=0.5, maxval=5.0, step=0.1, group=grpSignals)
+
+useCandleSizeFilter = input.bool(true, "Use Candle Size Filter (replaces volume)", group=grpFilters)
+candleSizeMaLength  = input.int(20, "Candle Size SMA Length", minval=1, group=grpFilters)
+useVolatilityFilter  = input.bool(true, "Use Volatility Filter", group=grpFilters)
+atrLength            = input.int(14, "ATR Length", minval=1, group=grpFilters)
+atrMaLength          = input.int(50, "ATR Baseline Length", minval=5, group=grpFilters)
+atrRelativeThreshold = input.float(0.8, "Min ATR vs Baseline Ratio", minval=0.1, maxval=2.0, step=0.05, group=grpFilters)
+useChopFilter       = input.bool(true, "Use Chop Filter", group=grpFilters)
+chopLookback        = input.int(20, "Chop Filter Lookback", minval=5, group=grpFilters)
+chopMaxCrosses      = input.int(4, "Max VWAP Crosses In Lookback", minval=1, group=grpFilters)
+
+useEmaFilter  = input.bool(true, "Use EMA Trend Filter", group=grpEma)
+showEmas      = input.bool(true, "Show EMAs on Chart", group=grpEma)
+ema50Length   = input.int(50, "Fast EMA Length", minval=1, group=grpEma)
+ema200Length  = input.int(200, "Slow EMA Length", minval=1, group=grpEma)
+ema50Color    = input.color(color.rgb(255, 165, 0), "Fast EMA Color", group=grpEma)
+ema200Color   = input.color(color.rgb(255, 255, 255), "Slow EMA Color", group=grpEma)
+
+useRsiFilter  = input.bool(true, "Use RSI Filter", group=grpRsi)
+rsiLength     = input.int(14, "RSI Length", minval=1, group=grpRsi)
+rsiOverbought = input.float(65.0, "RSI Overbought — Mean Reversion Short", minval=50.0, maxval=90.0, step=1.0, group=grpRsi)
+rsiOversold   = input.float(35.0, "RSI Oversold — Mean Reversion Long", minval=10.0, maxval=50.0, step=1.0, group=grpRsi)
+
+useSessionFilter = input.bool(true, "Use Session Filter", group=grpSessions)
+tradeLondon      = input.bool(true, "Allow London Session", group=grpSessions)
+londonSession    = input.session("0700-1600", "London Session Window", group=grpSessions)
+tradeNewYork     = input.bool(true, "Allow New York Session", group=grpSessions)
+newYorkSession   = input.session("1300-2100", "New York Session Window", group=grpSessions)
+
+sessionVwapColor  = input.color(color.rgb(29, 126, 184), "Session VWAP Color", group=grpVisuals)
+anchoredVwapColor = input.color(color.rgb(219, 144, 56), "Anchored VWAP Color", group=grpVisuals)
+bandColor         = input.color(color.rgb(137, 145, 158), "Band Color", group=grpVisuals)
+bullTrendBgColor  = input.color(color.new(color.lime, 91), "Bull Trend Background", group=grpVisuals)
+bearTrendBgColor  = input.color(color.new(color.red, 91), "Bear Trend Background", group=grpVisuals)
+rangeBgColor      = input.color(color.new(color.gray, 93), "Range Background", group=grpVisuals)
+
+showDashboard = input.bool(true, "Show Dashboard", group=grpDashboard)
+
+//------------------------------------------------------------------------------
+// Modular functions
+//------------------------------------------------------------------------------
+vwapCalc(_src, _vol, _reset, _cumPVPrev, _cumVPrev, _cumP2VPrev) =>
+    float cumPV   = _reset ? (_src * _vol) : (_cumPVPrev + (_src * _vol))
+    float cumV    = _reset ? _vol : (_cumVPrev + _vol)
+    float cumP2V  = _reset ? (_src * _src * _vol) : (_cumP2VPrev + (_src * _src * _vol))
+    float vwapVal = cumV > 0 ? (cumPV / cumV) : na
+    float variance = cumV > 0 and not na(vwapVal) ? math.max((cumP2V / cumV) - (vwapVal * vwapVal), 0.0) : na
+    float sigma   = not na(variance) ? math.sqrt(variance) : na
+    [cumPV, cumV, cumP2V, vwapVal, sigma]
+
+anchoredVwapCalc(_src, _vol, _anchorStart, _anchorActive, _cumPVPrev, _cumVPrev) =>
+    float cumPV = _anchorActive ? (_anchorStart ? (_src * _vol) : (_cumPVPrev + (_src * _vol))) : 0.0
+    float cumV  = _anchorActive ? (_anchorStart ? _vol : (_cumVPrev + _vol)) : 0.0
+    float avwap = _anchorActive and cumV > 0 ? (cumPV / cumV) : na
+    [cumPV, cumV, avwap]
+
+bandCalc(_basis, _sigma, _mult1, _mult2, _mult3) =>
+    float upper1 = _basis + (_sigma * _mult1)
+    float lower1 = _basis - (_sigma * _mult1)
+    float upper2 = _basis + (_sigma * _mult2)
+    float lower2 = _basis - (_sigma * _mult2)
+    float upper3 = _basis + (_sigma * _mult3)
+    float lower3 = _basis - (_sigma * _mult3)
+    [upper1, lower1, upper2, lower2, upper3, lower3]
+
+marketState(_close, _vwap, _upper1, _lower1, _atr, _slopeLookback, _slopeThreshold, _crossCount, _rangeCrossThreshold, _prevState) =>
+    float slopeRaw  = _slopeLookback > 0 and not na(_vwap[_slopeLookback]) ? ((_vwap - _vwap[_slopeLookback]) / _slopeLookback) : 0.0
+    float slopeNorm = _atr > 0 ? (slopeRaw / _atr) : 0.0
+    float distNow   = not na(_vwap) ? math.abs(_close - _vwap) : na
+    float distPrev  = not na(_vwap[1]) ? math.abs(_close[1] - _vwap[1]) : na
+    bool valid        = not na(_vwap) and not na(_upper1) and not na(_lower1) and not na(distNow) and not na(distPrev)
+    bool bullishTrend = valid and _close > _upper1 and slopeNorm > _slopeThreshold and distNow > distPrev
+    bool bearishTrend = valid and _close < _lower1 and slopeNorm < -_slopeThreshold and distNow > distPrev
+    bool rangeMode    = valid and math.abs(_close - _vwap) <= math.abs(_upper1 - _vwap) and math.abs(slopeNorm) <= _slopeThreshold and _crossCount >= _rangeCrossThreshold
+    int  st           = bullishTrend ? 1 : bearishTrend ? -1 : rangeMode ? 0 : _prevState
+    [st, bullishTrend, bearishTrend, rangeMode, slopeNorm]
+
+signalEngine(_enableCont, _enableMean, _enableReclaim, _enableBounce, _baseFilters, _bullTrend, _bearTrend, _rangeMode, _contLongSetup, _contShortSetup, _meanLongSetup, _meanShortSetup, _reclaimLongSetup, _reclaimShortSetup, _bounceLongSetup, _bounceShortSetup) =>
+    bool contLong    = _enableCont    and _baseFilters and _bullTrend and _contLongSetup
+    bool contShort   = _enableCont    and _baseFilters and _bearTrend and _contShortSetup
+    bool meanLong    = _enableMean    and _baseFilters and _rangeMode and _meanLongSetup
+    bool meanShort   = _enableMean    and _baseFilters and _rangeMode and _meanShortSetup
+    bool reclaimLong  = _enableReclaim and _baseFilters and _reclaimLongSetup
+    bool reclaimShort = _enableReclaim and _baseFilters and _reclaimShortSetup
+    bool bounceLong  = _enableBounce  and _baseFilters and _bullTrend and _bounceLongSetup  and not contLong  and not reclaimLong
+    bool bounceShort = _enableBounce  and _baseFilters and _bearTrend and _bounceShortSetup and not contShort and not reclaimShort
+    [contLong, contShort, meanLong, meanShort, reclaimLong, reclaimShort, bounceLong, bounceShort]
+
+rollingCount(_event, _length) =>
+    float cumulative = ta.cum(_event ? 1.0 : 0.0)
+    cumulative - nz(cumulative[_length], 0.0)
+
+//------------------------------------------------------------------------------
+// Session tracking and previous-day anchors
+//------------------------------------------------------------------------------
+src               = hlc3
+tradingDayStamp   = time_tradingday
+calendarDayStamp  = time("D")
+tradingDayChange  = ta.change(tradingDayStamp)
+calendarDayChange = ta.change(calendarDayStamp)
+isNewTradingSession = barstate.isfirst ? true : nz(tradingDayChange, 0) != 0
+isNewCalendarDay    = barstate.isfirst ? true : nz(calendarDayChange, 0) != 0
+isNewSession        = sessionResetBasis == "Trading Session" ? isNewTradingSession : isNewCalendarDay
+
+var int   sessionOpenTime = na
+var float dayHigh         = na
+var float dayLow          = na
+var int   dayHighTime     = na
+var int   dayLowTime      = na
+var float prevDayHigh     = na
+var float prevDayLow      = na
+var int   prevDayHighTime = na
+var int   prevDayLowTime  = na
+
+if barstate.isfirst
+    sessionOpenTime := time
+    dayHigh         := high
+    dayLow          := low
+    dayHighTime     := time
+    dayLowTime      := time
+else
+    if isNewSession
+        sessionOpenTime := time
+    if isNewCalendarDay
+        prevDayHigh     := dayHigh
+        prevDayLow      := dayLow
+        prevDayHighTime := dayHighTime
+        prevDayLowTime  := dayLowTime
+        dayHigh         := high
+        dayLow          := low
+        dayHighTime     := time
+        dayLowTime      := time
+    else
+        if na(dayHigh) or high >= dayHigh
+            dayHigh     := high
+            dayHighTime := time
+        if na(dayLow) or low <= dayLow
+            dayLow      := low
+            dayLowTime  := time
+
+//------------------------------------------------------------------------------
+// Session VWAP and sigma bands
+//------------------------------------------------------------------------------
+var float sessionCumPV  = 0.0
+var float sessionCumV   = 0.0
+var float sessionCumP2V = 0.0
+
+[sessionCumPVNext, sessionCumVNext, sessionCumP2VNext, sessionVwap, sessionSigma] = vwapCalc(src, volume, isNewSession, nz(sessionCumPV[1], 0.0), nz(sessionCumV[1], 0.0), nz(sessionCumP2V[1], 0.0))
+sessionCumPV  := sessionCumPVNext
+sessionCumV   := sessionCumVNext
+sessionCumP2V := sessionCumP2VNext
+
+[upper1, lower1, upper2, lower2, upper3, lower3] = bandCalc(sessionVwap, sessionSigma, band1Mult, band2Mult, band3Mult)
+
+//------------------------------------------------------------------------------
+// Anchored VWAP
+//------------------------------------------------------------------------------
+int selectedAnchorTime = na
+selectedAnchorTime := anchorMode == "Session Open" ? sessionOpenTime : anchorMode == "Previous Day High" ? prevDayHighTime : anchorMode == "Previous Day Low" ? prevDayLowTime : manualAnchorTime
+
+bool anchorActive      = enableAnchoredVwap and not na(selectedAnchorTime) and time >= selectedAnchorTime
+bool priorAnchorActive = bar_index > 0 ? anchorActive[1] : false
+bool anchorChanged     = enableAnchoredVwap and nz(selectedAnchorTime, 0) != nz(selectedAnchorTime[1], 0)
+bool anchorStart       = anchorActive and (anchorChanged or not priorAnchorActive)
+
+var float anchorCumPV = 0.0
+var float anchorCumV  = 0.0
+
+[anchorCumPVNext, anchorCumVNext, anchoredVwap] = anchoredVwapCalc(src, volume, anchorStart, anchorActive, nz(anchorCumPV[1], 0.0), nz(anchorCumV[1], 0.0))
+anchorCumPV := anchorCumPVNext
+anchorCumV  := anchorCumVNext
+
+//------------------------------------------------------------------------------
+// EMA calculations
+//------------------------------------------------------------------------------
+ema50Value  = ta.ema(close, ema50Length)
+ema200Value = ta.ema(close, ema200Length)
+
+emaLongPass  = not useEmaFilter or (close > ema200Value)
+emaShortPass = not useEmaFilter or (close < ema200Value)
+
+//------------------------------------------------------------------------------
+// RSI calculation
+//------------------------------------------------------------------------------
+rsiValue = ta.rsi(close, rsiLength)
+
+rsiMeanLongPass   = not useRsiFilter or (rsiValue <= rsiOversold)
+rsiMeanShortPass  = not useRsiFilter or (rsiValue >= rsiOverbought)
+rsiTrendLongPass  = not useRsiFilter or (rsiValue >= 50.0)
+rsiTrendShortPass = not useRsiFilter or (rsiValue <= 50.0)
+
+//------------------------------------------------------------------------------
+// Filters
+//------------------------------------------------------------------------------
+candleRange   = math.max(high - low, syminfo.mintick)
+candleRangeMa = ta.sma(candleRange, candleSizeMaLength)
+atrValue      = ta.atr(atrLength)
+atrMa         = ta.sma(atrValue, atrMaLength)
+
+bool inLondon              = not na(time(timeframe.period, londonSession))
+bool inNewYork             = not na(time(timeframe.period, newYorkSession))
+bool sessionSelectionEnabled = tradeLondon or tradeNewYork
+bool sessionWindowPass     = sessionSelectionEnabled ? ((tradeLondon and inLondon) or (tradeNewYork and inNewYork)) : true
+
+candleSizePass = not useCandleSizeFilter or (candleRange >= candleRangeMa * 0.85)
+volatilityPass = not useVolatilityFilter or (atrMa > 0 and atrValue >= atrMa * atrRelativeThreshold)
+timePass       = not useSessionFilter or sessionWindowPass
+
+vwapCrossRaw    = ta.cross(close, sessionVwap)
+crossEvent      = not na(sessionVwap) ? vwapCrossRaw : false
+stateCrossCount = rollingCount(crossEvent, stateCrossLookback)
+chopCrossCount  = rollingCount(crossEvent, chopLookback)
+chopPass        = not useChopFilter or (chopCrossCount <= chopMaxCrosses)
+
+baseFiltersPass = candleSizePass and volatilityPass and timePass and chopPass
+
+//------------------------------------------------------------------------------
+// Candle behavior analysis
+//------------------------------------------------------------------------------
+bodySize  = math.abs(close - open)
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+
+bullishEngulfing = close > open and close[1] < open[1] and open <= close[1] and close >= open[1]
+bearishEngulfing = close < open and close[1] > open[1] and open >= close[1] and close <= open[1]
+
+strongBullish = close > open and (bodySize / candleRange) >= strongBodyRatio and upperWick <= candleRange * 0.25
+strongBearish = close < open and (bodySize / candleRange) >= strongBodyRatio and lowerWick <= candleRange * 0.25
+
+bullishConfirmation = bullishEngulfing or strongBullish
+bearishConfirmation = bearishEngulfing or strongBearish
+
+bullishRejection = lowerWick > (bodySize * rejectionWickRatio) and close > open and close >= low + (candleRange * 0.6)
+bearishRejection = upperWick > (bodySize * rejectionWickRatio) and close < open and close <= high - (candleRange * 0.6)
+
+//------------------------------------------------------------------------------
+// Market state engine
+//------------------------------------------------------------------------------
+var int state = 0
+[stateNext, bullTrendStateRaw, bearTrendStateRaw, rangeStateRaw, vwapSlopeNorm] = marketState(close, sessionVwap, upper1, lower1, atrValue, stateSlopeLookback, stateSlopeThreshold, stateCrossCount, rangeCrossThreshold, nz(state[1], 0))
+state := stateNext
+
+bullTrendMode = state == 1
+bearTrendMode = state == -1
+rangeMode     = state == 0
+
+//------------------------------------------------------------------------------
+// VWAP reclaim state machine
+//------------------------------------------------------------------------------
+var int bullReclaimStage = 0
+var int bearReclaimStage = 0
+var int bullHoldCount    = 0
+var int bearHoldCount    = 0
+
+bullCrossAbove = ta.crossover(close, sessionVwap)
+bearCrossBelow = ta.crossunder(close, sessionVwap)
+
+bullReclaimArmed = bullReclaimStage == 2
+bearReclaimArmed = bearReclaimStage == 2
+
+reclaimLongSetup  = bullReclaimArmed and low <= sessionVwap and close > sessionVwap and bullishConfirmation
+reclaimShortSetup = bearReclaimArmed and high >= sessionVwap and close < sessionVwap and bearishConfirmation
+
+if reclaimLongSetup
+    bullReclaimStage := 0
+    bullHoldCount    := 0
+else if bullCrossAbove and close[1] < sessionVwap[1]
+    bullReclaimStage := 1
+    bullHoldCount    := 1
+else if bullReclaimStage == 1
+    if close > sessionVwap
+        bullHoldCount += 1
+        if bullHoldCount >= reclaimHoldBars
+            bullReclaimStage := 2
+    else
+        bullReclaimStage := 0
+        bullHoldCount    := 0
+else if bullReclaimStage == 2 and close < sessionVwap
+    bullReclaimStage := 0
+    bullHoldCount    := 0
+
+if reclaimShortSetup
+    bearReclaimStage := 0
+    bearHoldCount    := 0
+else if bearCrossBelow and close[1] > sessionVwap[1]
+    bearReclaimStage := 1
+    bearHoldCount    := 1
+else if bearReclaimStage == 1
+    if close < sessionVwap
+        bearHoldCount += 1
+        if bearHoldCount >= reclaimHoldBars
+            bearReclaimStage := 2
+    else
+        bearReclaimStage := 0
+        bearHoldCount    := 0
+else if bearReclaimStage == 2 and close > sessionVwap
+    bearReclaimStage := 0
+    bearHoldCount    := 0
+
+//------------------------------------------------------------------------------
+// Institutional setup definitions
+//------------------------------------------------------------------------------
+continuationLongSetup  = not na(upper1) and close > sessionVwap and close[1] > upper1[1] and low <= upper1 and bullishConfirmation
+continuationShortSetup = not na(lower1) and close < sessionVwap and close[1] < lower1[1] and high >= lower1 and bearishConfirmation
+
+meanLongSetup  = not na(lower2) and low <= lower2 and bullishRejection and close > lower2
+meanShortSetup = not na(upper2) and high >= upper2 and bearishRejection and close < upper2
+
+bounceLongSetup  = close > sessionVwap and low <= sessionVwap and strongBullish
+bounceShortSetup = close < sessionVwap and high >= sessionVwap and strongBearish
+
+[rawContLong, rawContShort, rawMeanLong, rawMeanShort, rawReclaimLong, rawReclaimShort, rawBounceLong, rawBounceShort] = signalEngine(enableContinuation, enableMeanReversion, enableReclaim, enableBounce, baseFiltersPass, bullTrendMode, bearTrendMode, rangeMode, continuationLongSetup, continuationShortSetup, meanLongSetup, meanShortSetup, reclaimLongSetup, reclaimShortSetup, bounceLongSetup, bounceShortSetup)
+
+// Apply directional EMA + RSI filters post signal engine
+contLong    = rawContLong    and emaLongPass  and rsiTrendLongPass
+contShort   = rawContShort   and emaShortPass and rsiTrendShortPass
+meanLong    = rawMeanLong    and emaLongPass  and rsiMeanLongPass
+meanShort   = rawMeanShort   and emaShortPass and rsiMeanShortPass
+reclaimLong  = rawReclaimLong  and emaLongPass  and rsiTrendLongPass
+reclaimShort = rawReclaimShort and emaShortPass and rsiTrendShortPass
+bounceLong  = rawBounceLong  and emaLongPass  and rsiTrendLongPass
+bounceShort = rawBounceShort and emaShortPass and rsiTrendShortPass
+
+rawLongSignal  = contLong  or meanLong  or reclaimLong  or bounceLong
+rawShortSignal = contShort or meanShort or reclaimShort or bounceShort
+
+trendRetestLong  = (low <= sessionVwap and close[1] > sessionVwap[1]) or (not na(upper1) and low <= upper1 and close[1] > upper1[1]) or bullCrossAbove
+trendRetestShort = (high >= sessionVwap and close[1] < sessionVwap[1]) or (not na(lower1) and high >= lower1 and close[1] < lower1[1]) or bearCrossBelow
+
+fallbackLongSignal  = useBiasFallbackSignals and baseFiltersPass and emaLongPass  and rsiTrendLongPass  and bullTrendMode and bullishConfirmation and trendRetestLong  and not rawLongSignal
+fallbackShortSignal = useBiasFallbackSignals and baseFiltersPass and emaShortPass and rsiTrendShortPass and bearTrendMode and bearishConfirmation and trendRetestShort and not rawShortSignal
+
+longSignalCandidate  = (rawLongSignal  or fallbackLongSignal)  and not rawShortSignal
+shortSignalCandidate = (rawShortSignal or fallbackShortSignal) and not rawLongSignal
+
+var int lastPrimarySignalBar = na
+cooldownPassed = na(lastPrimarySignalBar) or (bar_index - lastPrimarySignalBar > signalCooldownBars)
+
+buySignal  = cooldownPassed and longSignalCandidate
+sellSignal = cooldownPassed and shortSignalCandidate and not buySignal
+
+if buySignal or sellSignal
+    lastPrimarySignalBar := bar_index
+
+//------------------------------------------------------------------------------
+// Last signal tracker for dashboard
+//------------------------------------------------------------------------------
+var string lastSignalLabel = "NONE"
+var color  lastSignalColor = color.rgb(130, 140, 150)
+var float  lastSL          = na
+var float  lastTP          = na
+
+if buySignal
+    lastSignalLabel := contLong ? "CONT LONG" : meanLong ? "MEAN LONG" : reclaimLong ? "RECLAIM LONG" : bounceLong ? "BOUNCE LONG" : "BIAS LONG"
+    lastSignalColor := color.rgb(39, 174, 96)
+    lastSL          := close - atrValue
+    lastTP          := close + (2.0 * atrValue)
+else if sellSignal
+    lastSignalLabel := contShort ? "CONT SHORT" : meanShort ? "MEAN SHORT" : reclaimShort ? "RECLAIM SHORT" : bounceShort ? "BOUNCE SHORT" : "BIAS SHORT"
+    lastSignalColor := color.rgb(192, 57, 43)
+    lastSL          := close + atrValue
+    lastTP          := close - (2.0 * atrValue)
+
+//------------------------------------------------------------------------------
+// Alerts
+//------------------------------------------------------------------------------
+touchUpper2 = not na(upper2) and high >= upper2 and high[1] < upper2[1]
+touchLower2 = not na(lower2) and low <= lower2 and low[1] > lower2[1]
+
+alertcondition(buySignal,    "Any Buy Signal",       "VWAP Pro Institutional Suite | BUY | Price: {{close}} | TF: {{interval}}")
+alertcondition(sellSignal,   "Any Sell Signal",      "VWAP Pro Institutional Suite | SELL | Price: {{close}} | TF: {{interval}}")
+alertcondition(contLong,     "Continuation Long",    "VWAP Pro Institutional Suite | CONT LONG | Price: {{close}} | TF: {{interval}}")
+alertcondition(contShort,    "Continuation Short",   "VWAP Pro Institutional Suite | CONT SHORT | Price: {{close}} | TF: {{interval}}")
+alertcondition(meanLong,     "Mean Reversion Long",  "VWAP Pro Institutional Suite | MEAN LONG | Price: {{close}} | TF: {{interval}}")
+alertcondition(meanShort,    "Mean Reversion Short", "VWAP Pro Institutional Suite | MEAN SHORT | Price: {{close}} | TF: {{interval}}")
+alertcondition(reclaimLong,  "VWAP Reclaim Long",    "VWAP Pro Institutional Suite | RECLAIM LONG | Price: {{close}} | TF: {{interval}}")
+alertcondition(reclaimShort, "VWAP Reclaim Short",   "VWAP Pro Institutional Suite | RECLAIM SHORT | Price: {{close}} | TF: {{interval}}")
+alertcondition(bounceLong,   "VWAP Bounce Long",     "VWAP Pro Institutional Suite | BOUNCE LONG | Price: {{close}} | TF: {{interval}}")
+alertcondition(bounceShort,  "VWAP Bounce Short",    "VWAP Pro Institutional Suite | BOUNCE SHORT | Price: {{close}} | TF: {{interval}}")
+alertcondition(touchUpper2,  "Upper 2 Sigma Touch",  "VWAP Pro Institutional Suite | +2 Sigma Touch | Price: {{close}} | TF: {{interval}}")
+alertcondition(touchLower2,  "Lower 2 Sigma Touch",  "VWAP Pro Institutional Suite | -2 Sigma Touch | Price: {{close}} | TF: {{interval}}")
+
+//------------------------------------------------------------------------------
+// Visuals — background, VWAP lines, bands
+//------------------------------------------------------------------------------
+stateBg = state == 1 ? bullTrendBgColor : state == -1 ? bearTrendBgColor : rangeBgColor
+bgcolor(showStateBackground ? stateBg : na, force_overlay=true)
+
+sessionBreak = isNewSession and not barstate.isfirst
+anchorBreak  = anchorStart and not barstate.isfirst
+
+sessionPlot = plot(showSessionVwap ? (sessionBreak ? na : sessionVwap) : na, "Session VWAP", color=sessionVwapColor, linewidth=3, style=plot.style_linebr, force_overlay=true)
+anchorPlot  = plot(enableAnchoredVwap and showAnchoredVwap ? (anchorBreak ? na : anchoredVwap) : na, "Anchored VWAP", color=anchoredVwapColor, linewidth=2, style=plot.style_linebr, force_overlay=true)
+
+upper1Plot = plot(showBands ? (sessionBreak ? na : upper1) : na, "+1 Sigma", color=color.new(bandColor, 15), linewidth=1, style=plot.style_linebr, force_overlay=true)
+lower1Plot = plot(showBands ? (sessionBreak ? na : lower1) : na, "-1 Sigma", color=color.new(bandColor, 15), linewidth=1, style=plot.style_linebr, force_overlay=true)
+upper2Plot = plot(showBands ? (sessionBreak ? na : upper2) : na, "+2 Sigma", color=color.new(bandColor, 30), linewidth=1, style=plot.style_linebr, force_overlay=true)
+lower2Plot = plot(showBands ? (sessionBreak ? na : lower2) : na, "-2 Sigma", color=color.new(bandColor, 30), linewidth=1, style=plot.style_linebr, force_overlay=true)
+upper3Plot = plot(showBands ? (sessionBreak ? na : upper3) : na, "+3 Sigma", color=color.new(bandColor, 45), linewidth=1, style=plot.style_linebr, force_overlay=true)
+lower3Plot = plot(showBands ? (sessionBreak ? na : lower3) : na, "-3 Sigma", color=color.new(bandColor, 45), linewidth=1, style=plot.style_linebr, force_overlay=true)
+
+fill(upper1Plot, lower1Plot, color=showBandShading ? color.new(color.silver, 94) : na, title="Inner Value Zone")
+fill(upper2Plot, upper1Plot, color=showBandShading ? color.new(color.teal, 94) : na,   title="Upper Extension Zone")
+fill(lower1Plot, lower2Plot, color=showBandShading ? color.new(color.teal, 94) : na,   title="Lower Extension Zone")
+fill(upper3Plot, upper2Plot, color=showBandShading ? color.new(color.red, 96) : na,    title="Upper Extreme Zone")
+fill(lower2Plot, lower3Plot, color=showBandShading ? color.new(color.green, 96) : na,  title="Lower Extreme Zone")
+
+plot(showEmas ? ema50Value  : na, "EMA Fast",  color=ema50Color,  linewidth=1, force_overlay=true)
+plot(showEmas ? ema200Value : na, "EMA Slow", color=ema200Color, linewidth=2, force_overlay=true)
+
+plotshape(showSignals and showPrimarySignals and buySignal,  title="BUY Signal",  style=shape.labelup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="BUY",  textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showPrimarySignals and sellSignal, title="SELL Signal", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0),  size=size.small, text="SELL", textcolor=color.white, force_overlay=true)
+
+plotshape(showSignals and showSetupTags and contLong,    title="CONT Long",    style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="CONT",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and contShort,   title="CONT Short",   style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="CONT",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and meanLong,    title="MEAN Long",    style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="MEAN",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and meanShort,   title="MEAN Short",   style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="MEAN",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and reclaimLong,  title="RECLAIM Long",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="RECLAIM", textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and reclaimShort, title="RECLAIM Short", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="RECLAIM", textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and bounceLong,  title="BOUNCE Long",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="BOUNCE",  textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and bounceShort, title="BOUNCE Short", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="BOUNCE",  textcolor=color.white, force_overlay=true)
+
+//------------------------------------------------------------------------------
+// Dashboard table
+//------------------------------------------------------------------------------
+C_BULL    = color.rgb(39, 174, 96)
+C_BEAR    = color.rgb(192, 57, 43)
+C_NEUTRAL = color.rgb(127, 140, 141)
+C_HEADER  = color.rgb(15, 22, 38)
+C_ROW_A   = color.rgb(22, 31, 50)
+C_ROW_B   = color.rgb(18, 26, 43)
+C_SEP     = color.rgb(12, 18, 32)
+C_TEXT    = color.rgb(210, 215, 225)
+C_DIM     = color.rgb(120, 130, 145)
+
+biasLabel = state == 1 ? "BULLISH" : state == -1 ? "BEARISH" : "RANGE"
+biasColor = state == 1 ? C_BULL   : state == -1 ? C_BEAR   : C_NEUTRAL
+
+slopeLabel = vwapSlopeNorm > stateSlopeThreshold ? "Rising" : vwapSlopeNorm < -stateSlopeThreshold ? "Falling" : "Flat"
+slopeColor = vwapSlopeNorm > stateSlopeThreshold ? C_BULL  : vwapSlopeNorm < -stateSlopeThreshold ? C_BEAR   : C_NEUTRAL
+
+vwapPosLabel = not na(sessionVwap) ? (close > sessionVwap ? "Above" : "Below") : "N/A"
+vwapPosColor = not na(sessionVwap) ? (close > sessionVwap ? C_BULL : C_BEAR)   : C_NEUTRAL
+
+ema200Label  = close > ema200Value ? "Bullish" : "Bearish"
+ema200Color_ = close > ema200Value ? C_BULL : C_BEAR
+ema50Label   = close > ema50Value  ? "Bullish" : "Bearish"
+ema50Color_  = close > ema50Value  ? C_BULL : C_BEAR
+
+rsiLabel  = str.tostring(math.round(rsiValue, 1))
+rsiColor_ = rsiValue >= rsiOverbought ? C_BEAR : rsiValue <= rsiOversold ? C_BULL : C_NEUTRAL
+
+candleSizeLabel = candleSizePass ? "PASS" : "FAIL"
+candleSizeColor = candleSizePass ? C_BULL : C_BEAR
+atrLabel        = volatilityPass ? "PASS" : "FAIL"
+atrColor_       = volatilityPass ? C_BULL : C_BEAR
+sessionLabel    = timePass        ? "PASS" : "FAIL"
+sessionColor_   = timePass        ? C_BULL : C_BEAR
+chopLabel       = chopPass        ? "PASS" : "FAIL"
+chopColor_      = chopPass        ? C_BULL : C_BEAR
+overallLabel    = baseFiltersPass ? "READY" : "BLOCKED"
+overallColor    = baseFiltersPass ? C_BULL  : C_BEAR
+
+slLabel  = na(lastSL) ? "—" : str.tostring(lastSL, format.mintick)
+tpLabel  = na(lastTP) ? "—" : str.tostring(lastTP, format.mintick)
+
+var table dash = table.new(position.top_right, 2, 18,
+     bgcolor=C_HEADER,
+     border_color=color.rgb(35, 50, 75),
+     border_width=1,
+     frame_color=color.rgb(35, 50, 75),
+     frame_width=1)
+
+if showDashboard and barstate.islast
+    // Row 0 — title
+    table.cell(dash, 0, 0, "VWAP PRO  |  " + timeframe.period, text_color=C_TEXT, bgcolor=C_HEADER, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 1, 0, "", bgcolor=C_HEADER)
+    table.merge_cells(dash, 0, 0, 1, 0)
+
+    // Row 1 — section label
+    table.cell(dash, 0, 1, "MARKET OVERVIEW", text_color=C_DIM, bgcolor=C_SEP, text_size=size.tiny, text_halign=text.align_center)
+    table.cell(dash, 1, 1, "", bgcolor=C_SEP)
+    table.merge_cells(dash, 0, 1, 1, 1)
+
+    // Row 2 — bias
+    table.cell(dash, 0, 2, "Bias",          text_color=C_DIM,    bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 2, biasLabel,        text_color=biasColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+
+    // Row 3 — VWAP slope
+    table.cell(dash, 0, 3, "VWAP Slope",    text_color=C_DIM,     bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 3, slopeLabel,       text_color=slopeColor, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+
+    // Row 4 — price vs VWAP
+    table.cell(dash, 0, 4, "vs VWAP",       text_color=C_DIM,       bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 4, vwapPosLabel,     text_color=vwapPosColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+
+    // Row 5 — EMA 200
+    table.cell(dash, 0, 5, "EMA " + str.tostring(ema200Length), text_color=C_DIM,      bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 5, ema200Label,                          text_color=ema200Color_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+
+    // Row 6 — EMA 50
+    table.cell(dash, 0, 6, "EMA " + str.tostring(ema50Length),  text_color=C_DIM,     bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 6, ema50Label,                           text_color=ema50Color_, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+
+    // Row 7 — RSI
+    table.cell(dash, 0, 7, "RSI (" + str.tostring(rsiLength) + ")", text_color=C_DIM,   bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 7, rsiLabel,                                  text_color=rsiColor_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+
+    // Row 8 — section label
+    table.cell(dash, 0, 8, "LAST SIGNAL", text_color=C_DIM, bgcolor=C_SEP, text_size=size.tiny, text_halign=text.align_center)
+    table.cell(dash, 1, 8, "", bgcolor=C_SEP)
+    table.merge_cells(dash, 0, 8, 1, 8)
+
+    // Row 9 — signal name
+    table.cell(dash, 0, 9, lastSignalLabel, text_color=lastSignalColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 1, 9, "", bgcolor=C_ROW_A)
+    table.merge_cells(dash, 0, 9, 1, 9)
+
+    // Row 10 — stop loss
+    table.cell(dash, 0, 10, "SL (1× ATR)", text_color=C_DIM,                    bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 10, slLabel,         text_color=color.rgb(192, 57, 43),   bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+
+    // Row 11 — take profit
+    table.cell(dash, 0, 11, "TP (2× ATR)",  text_color=C_DIM,                    bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 11, tpLabel,          text_color=color.rgb(39, 174, 96),   bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+
+    // Row 12 — section label
+    table.cell(dash, 0, 12, "FILTERS", text_color=C_DIM, bgcolor=C_SEP, text_size=size.tiny, text_halign=text.align_center)
+    table.cell(dash, 1, 12, "", bgcolor=C_SEP)
+    table.merge_cells(dash, 0, 12, 1, 12)
+
+    // Row 13 — candle size
+    table.cell(dash, 0, 13, "Candle Size",   text_color=C_DIM,          bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 13, candleSizeLabel,  text_color=candleSizeColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+
+    // Row 14 — volatility
+    table.cell(dash, 0, 14, "Volatility",    text_color=C_DIM,    bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 14, atrLabel,         text_color=atrColor_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+
+    // Row 15 — session
+    table.cell(dash, 0, 15, "Session",        text_color=C_DIM,        bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 15, sessionLabel,      text_color=sessionColor_, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+
+    // Row 16 — chop
+    table.cell(dash, 0, 16, "Chop",           text_color=C_DIM,     bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 16, chopLabel,         text_color=chopColor_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+
+    // Row 17 — overall
+    table.cell(dash, 0, 17, "Overall",        text_color=C_DIM,      bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 17, overallLabel,      text_color=overallColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
