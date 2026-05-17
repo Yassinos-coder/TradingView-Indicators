@@ -1,0 +1,2129 @@
+Optimal VWAP trading under noisy conditions
+Mark L. Humphery-Jenner∗†
+Journal of Banking and Finance, 2011, Vol. 35, No. 9, pp. 2319-2329
+Available at http://dx.doi.org/10.1016/j.jbankfin.2011.01.028
+Abstract
+This article proposes an empirically tractable way to incorporate intra-
+day noise into a VWAP trading rule. In volatile markets, news arrives un-
+expectedly and rapidly. This should influence a trader’s trading decisions.
+However, the literature has not incorporated such information into an al-
+gorithmic trading framework. Subsequently, this paper presents a Dynamic
+VWAP (DVWAP) framework that allows informed traders to utilize random
+news; and thus, improve trade-execution.
+JEL classification: C53; G12; G29
+Keywords: VWAP strategies; Algorithmic trading; Intraday volume
+∗University of New South Wales and Tilburg University
+†This article benefited from comments at the 22nd Australasian Finance and Banking
+Conference. The author also thanks Ekkehart Boehmer, Zhi Da, David Feldman, Kingsley
+Fong, Terrence Hendershott, Ron Kaniel, Ronan Powell, Mark Seasholes, Jian-Xin Wang,
+and Bohui Zhang for their comments.
+1. Introduction
+This paper analyzes how traders can trade on randomly arriving noise.
+Volatile markets often feature unexpected or random news. The theoretical
+literature indicates that such noise should influence traders’ trading decisions
+(see e.g. Foster and Viswanathan, 1993, 1996). While Bialkowski, Darolles
+and Le Fol (2008) suggest a way to utilize market-wide information, the
+literature has not suggested a tractable trading framework in which to incor-
+porate stock-specific data. Thus, existing models may not fully exploit intra-
+day noise. Subsequently, this paper proposes a Dynamic VWAP (DVWAP)
+framework that allows traders to utilize observable, intraday, stock-specific
+information; and thus improve execution.
+This paper investigates the following situation. There is an ‘large’ trader
+and other market participants. The ‘ large’ trader is so called because he/she
+wants to shift a large block of stock on a particular day. This can be for
+liquidity reasons, or for information reasons (as per Inci, Lu and Seyhun,
+2010; Kang, 2010).
+The trader wants to minimize the transactions costs
+involved (following Barron and Karpoff, 2004). A key transaction cost is
+market impact. A way to minimize market impact is to break the large order
+into smaller blocks and trade the smaller blocks throughout the day. The
+other market participants trade throughout the day generating noise. This
+noise may, but need not, reflect information arising throughout the day.
+The large trader’s goal is optimal execution.
+If the large trader acts
+strategically, then optimal execution includes two key components. First,
+2
+the trade size literature suggests that the large trader should disguise his/her
+trades by mimicking the actions of the other market participants (or noise
+traders). The typical way to do this is to break the order into parcels whose
+size equals the average order size for the stock (following Barclay and Warner,
+1993; Chan and Fong, 2000; Cooney and Sias, 2004; Thapa and Poshakwale,
+2010). Second, optimal execution should minimize transaction costs (Bauer,
+Cosemans and Eichholz, 2009), operationalized by minimizing the market-
+impact of a trade (Kissell, Glantz and Malamut, 2004; Kissell and Malamut,
+2006).
+Historical VWAP (HVWAP) algorithms attempt to achieve optimal exe-
+cution. HVWAPs do this by distributing an order throughout the day so as
+to mimic the historical-average intraday distribution of volume (see Madha-
+van, 2002; Kakade, Kearns, Mansour and Ortiz, 2004; Bialkowski, Darolles
+and Le Fol, 2008; Kearns, 2008). HVWAP does this as follows. First, over
+some historical period it obtains intraday volume data.
+Second, for each
+given interval (‘bin’) b within the day, it calculates the proportion of total
+daily volume traded in bin b. Thus, for stock i for each day t, this obtains
+a set of proportions: {vi,t0, . . . , vi,tT }. The proportion in an arbitrary bin b
+is vi,tb. Third, it breaks the order into smaller parcels, where the proportion
+traded in bin b is vh
+i,tb% of the total order.
+The historical approach is problematic. The historical approach does not
+consider ‘random’ news. This is problematic since random news can increase
+(or decrease) the amount of volume traded in any interval b. Thus, if the
+3
+large trader ignores this volume spike (or lull), then he/she may imperfectly
+mimic other traders. Further, if there is a volume spike (lull), then the market
+impact of an order decreases (increases). Thus, if the large trader ignores the
+volume spike (or lull) then he/she may trade less (more) than is optimal.
+The literature has not resolved this problem. Kissell, Glantz and Malamut
+(2004) and Kissell and Malamut (2006) discuss an Implementation Shortfall
+(‘IS’) framework that utilizes contemporaneous market data.
+The IS ap-
+proach attempts to predict price movements.
+It accelerates (decelerates)
+trade if it predicts that the price will become less (more) favourable in the
+future. However, the IS framework has two key problems.
+First, the IS framework does not constrain the algorithm to distribute
+trade throughout the day. This ignores the strategic possibility of waiting
+for more favourable market conditions or future unexpected news releases
+(as raised in Fong and Liu, 2010). This conflicts with theoretical predictions
+that, in markets with high levels of unexpected news, large traders should
+‘strategically’ wait for future news arrival, and this should partially reduce
+the amount traded in a given trading period (see e.g. Foster and Viswanathan,
+1996; Back, Cao and Willard, 2000). Second, the IS framework does not
+attempt to mimic average trade sizes; and thus, may not mimic other traders
+or minimize transactions costs.
+Bialkowski, Darolles and Le Fol (2008) integrate some dynamic market
+movements into a VWAP model. Bialkowski, Darolles and Le Fol (2008)
+posit that the turnover for stock i, on day t, in time interval b (xi,tb) is
+4
+the historical market-average turnover in interval b over the prior month,
+plus lagged intraday deviations from the market-average. They examine the
+stocks in the CAC40 between the start of September 2003 and the end of
+August 2004.
+The Bialkowski, Darolles and Le Fol (2008) model can help predict depar-
+tures from historical market-average turnover, but may not identify stock-
+specific volume spikes. This is primarily because it restricts itself to analysis
+of turnover. Instead, other intraday factors, such as raw-volume, spreads, or
+order-book depth, may influence deviations from historical profiles. DVWAP
+proposes a general model that can incorporate these variables. And, analysis
+of turnover or volume is a special case. Second, it focuses on stock-specific
+deviations from a common market-turnover-factor. Implicitly, this assumes
+that, on average, a common market factor is a good predictor of stock-specific
+turnover. Instead, a more stock-specific model may be more appropriate and
+may improve the ability to detect stock-specific news.
+The problems with the historical or traditional approach induce two is-
+sues. First, how can the large trader utilize this random intraday information;
+and, second, does utilizing the random information improve execution?
+This paper proposes a Dynamic VWAP framework (DVWAP) that al-
+lows VWAP algorithms to incorporate intraday stock-specific data. DVWAP
+does this by both (a) basing itself on the historical intraday distribution of
+trade, as in HVWAP, (b) optimizing the use of contemporaneous intraday
+information so as to exploit ‘random news’. This enhances the approach in
+5
+Bialkowski, Darolles and Le Fol (2008) to allow traders to utilize intraday
+stock-specific information; and thus, ameliorate information asymmetries.
+Empirical results for 124 trading days across 130 stocks in the ASX 200
+confirm that the DVWAP framework can improve execution over a purely
+historical approach and has a lower tracking error (and variance thereof)
+than the Bialkowski, Darolles and Le Fol (2008) approach does.
+This paper contributes to the literature on optimal trading, and espe-
+cially optimal algorithmic trading. Algorithmic strategies have become in-
+creasingly popular (Chew, 2007), with up to 67% of investment managers
+indicating that they use trading algorithims (Grossman, 2005). VWAP al-
+gorithms are one of the most popular algorithms. Thus, improvements to
+VWAP algorithms contribute to a growing area of financial practice. This
+paper builds on the insights in Bialkowski, Darolles and Le Fol (2008) in or-
+der to incorporporate stock-specific information; and thus, enhance VWAP
+algorithms.
+The remainder of the paper proceeds as follows. Section 2 discusses a
+framework in which an informed trader might utilize ‘random news’ and
+information asymmetry. Section 3 analyzes the framework. The purpose is
+to show that the model can improve execution. It examines a model that
+incorporates ‘unexpected’ volume data into the framework, and contrasts
+this approach with that in Bialkowski, Darolles and Le Fol (2008). Section
+4 concludes.
+6
+2. What is the DVWAP framework?
+The goal is to improve execution. DVWAP induces better execution than
+HVWAP does if it trades more (less) when the market has more (less) volume.
+Thus, DVWAP has better execution than HVWAP does if it is more able to
+to track the intraday dispersion of volume. Therefore, the goal of DVWAP
+is to minimize tracking error. For a given stock i, the tracking error is the
+difference between (a) the percentage of total daily volume traded on day
+t, in bin b (va
+i,tb), and (b) the percentage of the total order traded in bin
+b (vd
+i,tb). This induces two issues: First, what optimization problem does
+DVWAP confront; and second, how does DVWAP resolve this optimization
+problem.
+2.1. What is the optimization problem?
+DVWAP aims to reduce tracking error. The basic idea behind DVWAP
+is to multiply the amount traded under a purely historical approach by a
+parameter, ˆθi,tb, in order to make the algorithm track intraday volume move-
+ments. This parameter derives from observable market-characteristics in the
+current day. Formally, DVWAP functions by optimizing the amount traded
+in each bin subject to two constraints. First, DVWAP must spread the order
+throughout the day. Second, DVWAP must ensure completion of the order
+and must not trade more than the total order size.
+To set ideas, define the following variables. Let the trader have Xi,t units
+of stock i to trade on day t. Let the proportion of Xi,t traded in bin b be
+7
+vd
+i,tb, where d denotes dynamic. Let the total volume for stock i on day t
+be Vi,t. The actual proportion of Vi,t traded in bin b is va
+i,tb, where a stands
+for actual. This is only observable at the end of the day. Let the historical
+average proportion of Vi,t traded in bin b be vh
+i,tb in bin b, where h denotes
+historical.
+HVWAP functions as follows. Take the historical average proportion of
+volume traded in bin b: vh
+i,tb. Now, the proportion of the total order, Xi,t,
+traded in bin b equals the historical average proportion of volume traded in
+bin b; that is, the amount traded in bin b is vh
+i,tb × Xi,t.
+DVWAP aims to optimize the amount traded in each bin b. The optimiza-
+tion problem is in Equation (1) . Acknowledge that there is some proportion
+of the total order (Xi,t) after which the algorithm should apportion the re-
+maining amount of the total order so as to spread the order throughout the
+whole day. For example, if γ = 80%, then after the algorithm has traded
+0.8×Xi,t, then it should apportion the remaining trade across the remaining
+bins.
+The optimization problem is as follows. Break the trading day into two
+parts: Part (a) is when the algorithm has traded less than γ. Part (b) is
+when the algorithm has traded more than γ.
+For Part (a); if the algorithm has traded less than γ, then DVWAP starts
+with the amount that HVWAP would trade in bin t. Recall that in bin b
+HVWAP trades vh
+i,tb of the total order. DVWAP then estimates the ratio
+8
+ˆθi,(t−k)b =
+\
+
+va
+i,(t−k)b
+vh
+i,(t−k)b
+
+. DVWAP then multiplies vh
+i,tb by a parameter ˆθi,tb. The
+parameter is estimated on historical ‘training’ data and operates to minimize
+the difference between the amount traded in b and the actual volume in bin
+b. The model constrains ˆθi,tb between
+
+θ, ˉθ
+
+to ensure that the algorithm
+does not trade too much in a given bin. Section 2.2 discusses the estimation
+of θ and ˉθ. Section 3.3 discusses the impact on DVWAP’s performance of
+different θ and ˉθ parameters.
+For Part (b); if the algorithm has traded more than γ, then DVWAP ap-
+portions the remainder of the order across the remaining bins. It functions
+as follows. First, determine the amount left to trade. Second, for each re-
+maining bin, calculate the percentage that HVWAP would trade in that bin;
+and, divide this by the total that HVWAP would trade over the remaining
+bins. This creates a ‘weighting parameter’ for the remaining bins. Third,
+multiply the total left to trade by the ‘weighting parameter’.
+This situation induces the minimization problem:
+9
+min
+θ,γ
+
+
+Iγc ˆθtvh
+i,tb + Iγ
+
+
+
+
+
+
+
+vh
+i,tb
+T
+X
+b=tγ
+vh
+i,tb
+
+
+
+
+
+
+
+
+
+−va
+i,tb
+(1)
+subject to
+T
+X
+b=1
+vd
+i,tb
+=
+1
+vd
+i,tb
+≤
+ˉθ × vh
+i,tb
+−vd
+i,tb
+≤
+−θ × vh
+i,tb
+(2)
+Here, Iγc (and Iγ) is an indicator that the algorithm has traded less than
+(more than) γ% of the total order. The bin tγ is the bin after which the
+trader has traded γ% of the total order. vd
+i,tb is the percentage of the total
+order that DVWAP trades in bin b. vh
+i,tb is the percentage of the total order
+that HVWAP would trade in bin b; va
+i,tb is the actual percentage of total daily
+volume that trades in bin b.
+The issue is how to estimate the parameters. There are two key param-
+eters of interest, θ and γ. Ideally, θ and γ solve Equation (1). If the actual
+percentage of total daily volume that trades in bin b, va
+i,tb, were known, then
+the problem is trivial. However, the total daily volume is only observable
+at the end of the day. Thus, va
+i,tb is not ex ante observable. Thus, the goal
+is to use training (or historical) data to estimate a functional form for ˆθ.
+Specifically DVWAP posits that ˆθ is a function of observable intraday stock
+characteristics, denoted xi,(t−k)b−1. Thus, the parameter ˆθi,tb is the parameter
+10
+derived from ˆθi,tb = f(xi,tb−1) such that vd
+i,tb = θvh
+i,tb, and ˆθi,tb ∈
+
+θ, ˉθ
+
+.
+The issue is how to solve the optimization problem. The optimization
+problem in Equation (1) lacks an ex ante analytical solution since the pro-
+portion of total daily volume traded in bin b (va
+i,tb) depends on the total daily
+volume, which is only know after the close of trade. Thus, a trading algo-
+rithm cannot incorporate va
+i,tb into an ex ante solvable function. But, it can
+(a) use training data to estimate the function (va
+i,tb/vh
+i,tb) = f(xi,tb−1), and
+(b) use contemporaneous market data to predict
+\
+va
+i,tb/vh
+i,tb in the present day.
+Section 2.2 formalizes this practicable solution.
+2.2. What is a practicable solution?
+DVWAP aims minimize tracking error by using intraday market data.
+The solution is to generate the ‘dynamic VWAP recursion’. The recursion
+summarizes the modeling process. Define the following notation: there are
+N bins during the day; vh
+i,tb is the amount that HVWAP would trade in bin
+b; vd
+i,tb is the amount that DVWAP trades in bin b; Xi,t is the total amount
+of stock i to trade on day t. Preliminarily, set γ, which is a risk-tolerance
+parameter that tells the algorithm to revert to HVWAP after we have traded
+γ% of the total order. Further, set the risk-parameters
+
+θ, ˉθ
+
+, which define
+the allowable deviation from the HVWAP trading profile. That is, they bind
+vd
+i,tb to be above θ × vd
+i,tb and below ˉθ × vd
+i,tb. These are also risk-tolerance
+parameters that the trader can set to match the level of desired risk.
+There are two states: (1) where the trader has traded less than γ% of the
+11
+total order, and (2) where the trader has traded more than γ% of the total
+order). Consider situation first situation. Proceed as follows:
+First, use historical intraday volume data to find vh
+i,tb, the proportion of
+total daily volume that ordinarily trades in bin b. Typically, this is average
+proportion of actual daily volume over the past month.
+Second, let xi,tb−1 be a vector of intraday stock characteristics from day
+t that are expected to influence intraday volume. These are characteristics
+observable in bin b (hence the subscript b −1); and thus, must logically date
+from momentarily before bin b. Use historical data (from k days before the
+current day t) to model the ratio of actual volume to ‘historical’ volume. That
+is, model va
+i,t−kb/vh
+i,t−kb = f(xi,(t−k)b−1), where f : Rn →R maps n observable
+stock-characteristics to the volume-ratio. This gives the functional form of f
+that DVWAP will uses on a vector of characteristics from the current day t.
+Third, consider bin b on the current day t.
+Take the vector of char-
+acteristics xi,(t)b−1.
+Apply the function f to these characteristics to yield
+ˆθi,tb = f(xi,(t−k)b−1). Acknowledge that the parameter ˆθ is simply the pre-
+dicted ratio of actual volume to historical volume. That is the predicted
+value of: va
+i,tb/vh
+i,tb. Apply the parameter ˆθ to vh
+i,tb to yield vd
+i,tb = ˆθi,tbvh
+i,tb.
+Now, consider the situation where DVWAP has traded more than γ% of
+the total order. DVWAP takes the amount that HVWAP would trade in bin
+b and divides it by the total amount that HVWAP would trade in the rest of
+the day. Thus, the amount traded is vh
+i,tb/ PN−b
+j=0 vh
+i,tb. This situation induces
+the dynamic VWAP recursion.
+12
+vd
+i,tb = Iγcvh
+i,tb ˆθi,tb + Iγ
+vh
+i,tb
+PN−b
+j=0 vh
+i,tb
+= Iγcvh
+i,tbf(xi,(t−k)b−1) + Iγ
+vh
+i,tb
+PN−b
+j=0 vh
+i,tb
+(3)
+In words, the recursion says: First, if we have traded less than γ% of
+the total order, then we trade vh
+i,tbf(xi,(t−k)b−1) in bin b.
+This amount is
+the amount traded under HVWAP (i.e. vh
+i,tb) multiplied by an adjustment
+parameter (i.e. f(xi,(t−k)b−1)). The adjustment parameter has two compo-
+nents, the information from the prior bin (xi,(t−k)b−1)) and the functional
+form (f : Rn →R). The information from the prior bin is from day t and
+can include several lags of volume movements, turnover, or order-book infor-
+mation. The functional form f derives from from historical modeling of the
+equation va
+i,tb/vh
+i,tb = f(xi,(t−k)b−1) on historical data.
+In the second state, if we have traded more than γ% of the total order,
+then we default back to a HVWAP type approach in order to avoid over-
+trading. Here, there are N −b bins left in the day. Thus, for bin b we would
+take the amount HVWAP would trade in bin b (i.e. vh
+i,tb) and divide it by
+the amount that HVWAP would trade over the remainder of the day (i.e.
+PN−b
+j=0 vh
+i,tb).
+This section defined the DVWAP relationship. The issue is then whether
+it works to improve trade execution. Section 3 applies it to a simple example
+and examines it in the context of the approach taken in Bialkowski, Darolles
+13
+and Le Fol (2008).
+3. Application
+This section applies DVWAP within a practical setting. The purpose
+is to test if DVWAP improves execution, and to contrast the DVWAP ap-
+proach to the approach in Bialkowski, Darolles and Le Fol (2008). Section
+3.1 contains an intentionally simplistic example. It models the ratio
+\
+va
+i,tb/vh
+i,tb
+as a function of ‘unexpected’ or ‘decomposed’ intraday volume-movements.
+Section examines the ARMA(1,1) and SETAR approaches in Bialkowski,
+Darolles and Le Fol (2008). The results indicate that DVWAP has lower
+tracking error than HVWAP, or the approaches in Bialkowski, Darolles and
+Le Fol (2008) do, and DVWAP’s tracking error has lower variance (or is more
+stable) than that the tracking errors in the Bialkowski, Darolles and Le Fol
+(2008) models have.
+3.1. The volume example
+The literature suggests that past volume information may predict future
+volume spikes or lulls. The theoretical model in Foster and Viswanathan
+(1993) indicates that unanticipated news affects stock volumes, and that
+volumes are autocorrelated. This implies that past volume information may
+help predict future volume spikes/lulls. Brooks, Patel and Su (2003) study 21
+unanticipated CEO deaths, and find that the unanticipated news/information
+can influence stock volume for up to an hour after the news release. Nof-
+singer and Prucyk (2003) find a two hour delay between an unanticipated
+14
+news announcement, and a subsequent volume increase. They also find per-
+sistence in volume increases. These results suggest that lagged volume may
+help predict future volume movements.1
+This induces three key issues. First, does contemporaneous volume con-
+vey useful information; second, how would DVWAP use this information; and
+third, does using the information allow DVWAP to out-perform HVWAP?
+This section analyzes volume information using Reuters data for the ASX.
+The sample spans 4 April 2008 to 1 October 2008 (124 trading days), with
+the data from April being used solely to calculate parameters for May. The
+sample contains 197 stocks in the ASX 200. The sample loses 3 stocks due to
+data availability. Each day is split into 5 minute bins. Since the ASX com-
+mences trade for stocks at different times (depending on the stock’s position
+in the alphabet), this yields either 71 or 72 bins for each stock. In total, this
+yields 1,484,980 estimates. Data analysis uses R, SAS and STATA.
+The results indicate that DVWAP should incorporate lagged volume in-
+formation; and that, DVWAP performs better than HVWAP does when
+DVWAP incorporates contemporaneous volume information.
+1I also note that other factors, such as access to the derivatives market (see Chang,
+Hseih and Lai, 2009; Muck, 2010), could influence trading behavior; and thus, help to pre-
+dict future volume movements. The DVWAP model is not limited to using only historical
+volume information.
+15
+3.1.1. Would incorporating contemporaneous volume improve VWAP algo-
+rithms?
+Incorporating contemporaneous volume is useful only if that volume con-
+veys information that can improve the algorithm’s ability to predict future
+volume patterns. This occurs if the autocorrelation structure of daily vol-
+ume patterns differs from that of historical averages on which HVWAP bases
+itself, and it is possible to use this information to predict volume movements.
+The results indicate that the autocorrelation structure of volume pat-
+terns differs between actual volumes and historical average volume profiles,
+and this deviation conveys information. Figure 1 contains the intraday auto-
+correlation for the stock AAC. Panels (a) and (b) contain the autocorrelation
+structure for the historical average volume profile. The panels indicate that
+the historical volume profile assumes significant autocorrelation (consistent
+with Bialkowski, Darolles and Le Fol (2008)). However, Panels (c) and (d),
+which contain the autocorrelation structure for AAC on 9 April 2008 indi-
+cate that the autocorrelation structure for a given stock on a given day may
+not follow the historical profile. This indicates that the deviation from the
+historical profile may contain information about future volume movements.
+The deviation from the historical profile conveys information. Panels (e)
+and (f) examine ‘Decomposed Volume’. Decomposed volume is he difference
+between the actual volume in a given 5-minute bin b and volume expected in
+bin b if trade followed a historical volume pattern. Equation (4) summarizes
+this.
+16
+(Decomposed Volume)i,tb = na
+i,tb −ˆna
+i,tb
+Where
+na
+i,tb = Actual number of shares traded in bin b
+ˆna
+i,tb = Expected amount traded in interval b
+= na
+i,tb−1 × vh
+i,tb
+vh
+i,tb−1
+(4)
+Deviations from the historical profile may convey information. Panels
+(e) and (f) indicate that deviations from the historical profile at time b −1
+convey information about deviations at time b. Thus, lagged deviations may
+convey useful information about future volume movements. This indicates
+focusing on the ‘unexpected’ part of volume may improve the performance
+of VWAP algorithms.
+3.1.2. How does DVWAP incorporate contemporaneous volume?
+DVWAP incorporates contemporaneous volume information into a VWAP
+framework. Three issues obtain: First, what is the functional form of θ. Sec-
+ond, what is the optimal value of γ. Third, what are the values of θ and
+ˉθ.
+The ˆθi,tb parameter determines the amount traded in bin b. To obtain this,
+proceed as follows. First, the model posits (following Section 3.1.1) that a
+predictor of volume may be the lagged difference between actual volume and
+17
+expected volume, denoted ξi,tb. The model takes first-differences to remove
+intra-day seasonality of volume.
+Second, using the month before day t, the model estimates the relation
+between lagged intraday volume and current intraday volume. Let, xi,(t−k)b−1
+be the stock-specific volume variable on the prior month. And, βi is a vector
+of coefficients. Thus, it estimates Equation (5).
+(va
+i,(t−k)b/vh
+i,(t−k)b) = xi,(t−k)b−1βi
+(5)
+In the specific case of decomposed volume the model is as follows. For each
+stock and each month, this paper estimates rolling regressions of Equation
+(6). The parameters for stock j in month m derive from the estimation of
+Equation (6) for stock j in month m−1. This yields 1370 sets of coefficients.
+The model uses three lagged differences in order to balance the information
+gained from more lags with the loss of observations due to the lagged starting
+period.
+18
+va
+i,(t−k)b
+vh
+i,(t−k)b
+= β0 + β1Δξi,(t−k)b−1 + β2Δξi,(t−k)b−2 + β3Δξi,(t−k)b−3 + εt
+(6)
+Where
+ξi,(t−k)b−1 = ni,(t−k)b−1 −ˆni,(t−k)b−1
+ˆni,(t−k)b−1
+ni,(t−k)b−1 = Total volume in bin b −1
+ˆni,(t−k)b−1 = Predicted volume in bin b −1
+= na
+i,(t−k)b−2 ×
+vh
+i,(t−k)b−1
+vh
+i,(t−k)b−2
+(7)
+The γ parameter derives from data over the prior month. The optimal
+γ minimizes the absolute deviation between (a) the percentage of the order
+traded in bin b, vd
+i,tb, and (b) the percentage of total daily volume traded in
+bin b, va
+i,tb. That is, given the estimation of Equation (6), γ should minimize
+|vd
+i,tb −va
+i,tb|. Here, this is approximately γ = 0.8 on average. Thus, this paper
+utilizes the value γ = 0.8 for future equations.
+The limits θ and ˉθ derive from data over the prior month. The optimal
+[θ, ˉθ] minimize the absolute deviation between θtvh
+i,tb and va
+i,tb ∀θ ∈[θ, ˉθ].
+Here, the approximate average values are θ = 0.9 and ˉθ = 1.1.
+This motivates examination of whether DVWAP tracks actual daily vol-
+ume better than HVWAP does. DVWAP does this if it has a better tracking
+performance on average (examined in Section 3.1.3), and across a variety of
+market and stock conditions (examined in Section 3.1.4).
+19
+3.1.3. How do the changes perform on average?
+The results indicate that DVWAP performs better than HVWAP does.
+The trading goal is to trade more (less) if overall market volume is higher
+(lower). This occurs if the algorithm tracks the intraday dispersion of trade.
+Thus, DVWAP achieves better execution than HVWAP does if it reduces
+the absolute average difference between (a) the proportion traded in bin b
+and (b) the proportion of daily volume that trades in bin b. Thus, DVWAP
+performs better than HVWAP does if both (a) it has lower tracking error on
+average, and (b) it’s tracking error is lower in the majority of bins.
+This paper compares DVWAP’s performance with HVWAP’s performance
+by considering its tracking error. It focuses on out-of-sample results, although
+reports soem in-sample results for robustness. The tracking errors are de-
+fined as the absolute difference between the percentage of the order executed
+in bin b versus the percentage of market volume traded in bin b. The abso-
+lute difference is more appropriate than the straight difference since absolute
+differences penalize positive and negative differences whereas straight mean
+differences allow negative differences to cancel positive differences. Thus, the
+tracking errors are:
+ϵh
+i,tb = |vh
+i,tb −va
+i,tb|
+(8)
+ϵd
+i,tb = |vd
+i,tb −va
+i,tb|
+(9)
+20
+The first issue is if DVWAP reduces tracking error on average. The results
+indicate that, on average, DVWAP tracks actual daily volume better than
+HVWAP does. Table 1 contains mean and median tracking errors. Panel A
+indicates that ϵd
+i,tb is lower than is ϵh
+i,tb (at 1% significance) for 5-minute bins.
+Panel B and Panel C confirm these results for 15-minute and 60-minute bins,
+respectively.
+Figure 2 illustrates the average deviation of DVWAP from actual and
+HVWAP from actual for each individual trading day. The large deviation
+spikes coincide with significant corporate announcements common to many
+stocks (such as common earnings announcements and annual report releases).
+In these situations, neither HVWAP nor DVWAP can anticipate ex-ante the
+large volume spike or the precise timing thereof. Overall, the results indicate
+that DVWAP tracks actual market volume better than HVWAP does.
+The second issue is if DVWAP reduces tracking error in the majority of
+bins. For bin b, DVWAP predicts volume movements better than HVWAP
+does if DVWAP’s tracking error in bin b is lower than HVWAP’s is. Thus,
+DVWAP predicts volume movements better than HVWAP does if there are
+more bins for which DVWAP has lower tracking error. Thus, Table 4 exam-
+ines the percentage of bins for which DVWAP has a lower tracking error.
+The results in Table 4 indicate that DVWAP in the majority of bins. The
+results indicate that DVWAP has lower tracking error than HVWAP does
+in approximately 65% of all bins. This result is robust to the ‘spikiness’ of
+the day (the intra-day variance of volume between bins), the historical intra-
+21
+day variance of volume (‘VolVar’), or the historical inter-day price variance
+(‘PriceVar’).
+The results overall indicate that DVWAP performs better than HVWAP
+does.
+3.1.4. Is DVWAP’s performance robust to stock and market characteristics?
+DVWAP has lower tracking error than HVWAP does on average. How-
+ever, DVWAP performs better than HVWAP does only if it can outperform
+HVWAP across a variety of market conditions and stock characteristics. This
+paper assesses this by first sorting the data by factors that might affect
+DVWAP’s performance, and then through multivariate regression analysis.
+Univariate analysis indicates that DVWAP tracks actual market volume
+better than HVWAP does. To assess the performance on volatile days, this
+paper sorts the sample into groups based on contemporaneous volume volatil-
+ity (the ‘spikiness’ of a day), historical intraday volume volatility (‘VolVar’),
+and historical inter-day price volatility (‘PriceVar’). This is important due
+to the reported volume-volatility relationship (see for example Xu, Chen and
+Wu, 2006; Darrat, Zhong and Cheng, 2007).
+Table 2 contains the out-of-sample tracking error sorted by the measures
+of variance. The results indicate that, after sorting by all types of volatility,
+DVWAP has lower tracking error than HVWAP does (at 1% significance).
+Table 3 contains in-sample tracking errors. The in sample results are consis-
+tent with the out-of-sample results. Unsurprisingly, DVWAP performs better
+22
+(has a lower tracking error) in in-sample tests.
+Multivariate analysis confirms that DVWAP’s tracking performance is
+robust to stock and market characteristics. Four key historical may influence
+DVWAP’s performance ability.
+First, if the stock’s intra-day volume is more volatile or if liquidity is more
+unpredictable, then DVWAP is more likely to make a prediction-error, and
+performance should worsen. The intra-day variance in the level of volume
+between five-minute bins (‘VolVar’) proxies for this (consistent with Johnson,
+2008).
+Second, the average trade size may influence DVWAP’s performance. Av-
+erage trade size (‘lnTradeSize’) can indicate the level of activity in a stock and
+the potential for informed trade2. However, it may also indicate additional
+volatility.
+If average trade size represents additional activity or informed
+trade, then it may provide DVWAP with more information on which to
+predict volume movements; and thus, may improve DVWAP’s performance.
+However, if average trade size indicates noise, then it may reduce the infor-
+mativeness of past volume information.
+Third, if trade in the stock is more active, then a volume-spike is less likely
+to persist over time. This may harm DVWAP’s ability to trade upon pre-
+dicted volume spikes. Thus, the models include ‘lnDailyTrades’: the daily-
+average number of trades. Fourth, if the stock’s price is more volatile, then
+2Barclay and Warner (1993); Chan and Fong (2000) discuss the relation between volume
+and informed trade in more detail
+23
+the level of volume may be more volatile. And, if the volume is more volatile,
+then DVWAP may be less able to predict future volume. Thus, the models
+include ‘PriceVar’, the historical inter-day variance of the stock price.
+Fifth and similarly, if the stock is more liquid, then market-prices are
+likely more efficient (Comerton-Forde, 1999); and thus, volume spikes are
+less likely to persist. This may reduce DVWAP’s performance. This paper
+proxies liquidity by examining the average number of trades at the best bid
+or ask price scaled by the average daily volume (‘BaRatio’): If there are
+relatively more trades at the best bid (or ask), then the stock is likely more
+liquid (Cao, Feild and Hanka, 2004). Table 5 defines these variables in detail.
+This paper uses three models to examine the relation between DVWAP’s
+out-performance and stock characteristics. First, Equation 10 regresses the
+above variables on the absolute difference between DVWAP’s tracking error
+(ϵd
+i,tb = |vd
+i,tb −va
+i,tb|) and HVWAP’s tracking error (ϵh
+i,tb = |vh
+i,tb −va
+i,tb|). The
+model uses an OLS regression with standard errors clustered by stock and by
+date (consistent with Petersen, 2009). Second, Equation 11 estimates a probit
+model where the dependent variable (IMPROVE) equals 1 if |vh
+i,tb −va
+i,tb|
+exceeds |vd
+i,tb −va
+i,tb| and equals 0 otherwise. Third, Equation 12 estimates
+a probit model where the dependent variable (CORRECT) equals 1 if the
+model correctly predicts that volume will be above or below the historical
+profile. Table 5 defines the variables in detail.
+24
+DIFF = β0 + β1VolVar + β2lnTradeSize
+(10)
++ β3lnDailyTrades + β4BaRatio + β5PriceVar + ε
+IMPROVE = β0 + β1VolVar + β2lnTradeSize
+(11)
++ β3lnDailyTrades + β4BaRatio + β5PriceVar + ε
+CORRECT = β0 + β1VolVar + β2lnTradeSize
+(12)
++ β3lnDailyTrades + β4BaRatio + β5PriceVar + ε
+The results indicate that DVWAP’s performance is robust to stock-level
+characteristics. Table 6 Column 1 indicates that DVWAP’s performance de-
+creases with the level of sophisticated trade (proxied by BaRatio), at 1%
+significance, and interday price volatility (PriceVar). However, DVWAP’s
+performance increases with intraday volume volatility (VolVar), indicating
+that DVWAP is especially able to extract useful information from past vol-
+ume movements. While the results in Column 2 and Column 3 indicate that
+BaRatio reduces DVWAP’s performance, the result is weakly significant at
+best. And, VolVar continues to improve DVWAP’s performance in Column
+2 and Column 3.
+Further, the low R2 in all models indicates that these
+variables do not completely explain DVWAP’s ability to track actual daily
+volume. Thus, while stock-level characteristics may influence DVWAP’s per-
+formance, they do not completely explain it.
+25
+3.2. DVWAP and the Bialkowski, Darolles and Le Fol (2008) approach
+This section examines DVWAP and the approach in Bialkowski, Darolles
+and Le Fol (2008). Bialkowski, Darolles and Le Fol (2008) propose one way to
+improve VWAP algorithms. They suggest a model that decomposes a stock’s
+intraday turnover into a ‘common’ component and a ‘specific’ component.
+The ‘common’ component reflects market-wide factors. The ‘specific’ com-
+ponent reflects stock-specific factors. The Bialkowski, Darolles and Le Fol
+(2008) model significantly improves upon a purely historical approach, such
+as that in HVWAP. This motivates examination of how Bialkowski, Darolles
+and Le Fol (2008) model intra-day value, and how DVWAP compares to the
+Bialkowski, Darolles and Le Fol (2008) approach.
+The DVWAP method and the Bialkowski, Darolles and Le Fol (2008)
+method function in different ways. The major difference is that DVWAP uses
+contemporaneous market data to predict the ratio va
+i,tb/vh
+i,tb. The DVWAP
+model in Section 3.1.2 asserts that the ratio is a function of ‘unexpected
+volume’. And, unexpected volume is the difference between the number of
+shares traded in bin b −1 and the number that would be predicted trade if
+trade followed a historical pattern. The historical pattern is stock-specific.
+By contrast, the Bialkowski, Darolles and Le Fol (2008) approach posits that
+turnover contains a stock specific component and a common component.
+This section uses a similar sample to Section 3.1. However, due to addi-
+tional modeling requirements, the number of estimates reduces to 871,718.
+The day is split into 5 minute bins. The results indicate that DVWAP has
+26
+lower tracking error than the models in Bialkowski, Darolles and Le Fol
+(2008) do.
+3.2.1. The Bialkowski, Darolles and Le Fol (2008) model
+This section defines the Bialkowski, Darolles and Le Fol (2008) approach.
+The approach builds upon the approach in Lo and Wang (2000). For present
+purposes, it proceeds as follows.
+Step 1, define the turnover for stock i, on day t, and in bin b+1 as xi,tb+1.
+Let this be a function of a ‘common’ component and a ‘specific’ component.
+Denote the predicted ‘common’ component as ˆci,tb+1; denote the predicted
+‘specific’ component as ˆei,tb+1. Thus, define the stock’s turnover as:
+xi,tb+1 = ˆci,tb+1 + ˆei,tb+1
+(13)
+Step 2, define a suitable ‘common’ component. Bialkowski, Darolles and
+Le Fol (2008) suggest, in their Equation (9), that a suitable ‘common’ com-
+ponent is ‘historical average of the common components of intraday volume’.
+Thus, the ‘common’ component for bin b on day t derives from the value-
+weighted average turnover for all stocks in the market in bin b across days
+t −1 to t −25. This yields the following:
+27
+ˆci,tb =
+25
+X
+i=1
+ci,(t−i)b
+(14)
+Step 3, estimate the specific component. The specific component is the
+part of turnover that is due to stock-specific factors. A key contribution of
+Bialkowski, Darolles and Le Fol (2008) is to model the specific component.
+They propose two ways to do this. This paper replicates both ways.
+The first method defines estimates ˆei,tb by using an ARMA(1,1) model. It
+defines the specific component in bin b as a function of the specific component
+in bin b −1. This yields:
+ei,tb = φ1ei,tb−1 + φ2 + ϵi,tb
+(15)
+Where,
+ei,tb−1 = xi,tb−1 −ci,tb−1
+(16)
+The second method estimates ˆei,tb by using a SETAR method.
+This
+method posits that there may be a regime shift during the day. This regime
+shift may occur after a certain volume or turnover trades.
+Bialkowski,
+Darolles and Le Fol (2008) suggest that there may be two regimes. They
+denote the regime-shift-point as τ.
+Let Iτ be an indicator variable that
+28
+equals one if volume exceeds τ. Thus, the SETAR model has the form:
+ei,tb = (φ11ei,tb−1 + φ12)(1 −Iτ) + (φ21ei,tb−1 + φ22)(Iτ) + ϵi,tb
+(17)
+This SETAR model has five parameters: φ11, φ12, φ21, φ22, and τ. This
+paper jointly estimates the parameters. and chooses the set of parameters
+that yields the lowest mean squared error.
+Step 4, combine the above knowledge to forecast ˆxi,tb+1.
+The issue is
+then how the model performs and how its performance differs from that of
+DVWAP.
+3.2.2. How does the turnover model perform?
+This section analyzes how the models perform. Three models are of inter-
+est: DVWAP, and the ARMA and SETAR models based upon Bialkowski,
+Darolles and Le Fol (2008).
+This section analyzes a model’s performance by considering the extent to
+which it improves over HVWAP. A model improves over HVWAP is better
+able to predict the percentage of total daily volume traded in bin b. Thus, a
+measure of a model’s performance is the difference between the tracking error
+of the model and the tracking error of HVWAP. To formalize this, denote
+the proportion of actual volume traded in bin b be va
+i,tb; the historical average
+amount traded in bin b be vh
+i,tb. The proportion that DVWAP, ARMA, and
+SETAR predict to trade in bin b are vd
+i,tb, varma
+i,tb
+, and vsetar
+i,tb , respectively.
+Denote the improvements over HVWAP as δd, δarma and δsetar, respectively.
+29
+Thus, the tracking errors are:
+ϵh
+i,tb = |vh
+i,tb −va
+i,tb|
+ϵd
+i,tb = |vd
+i,tb −va
+i,tb|
+ϵarma
+i,tb
+= |varma
+i,tb
+−va
+i,tb|
+ϵsetar
+i,tb
+= |vsetar
+i,tb
+−va
+i,tb|
+δd = ϵd
+i,tb −ϵh
+i,tb
+δarma = ϵarma
+i,tb
+−ϵh
+i,tb
+δsetar = ϵsetar
+i,tb
+−ϵh
+i,tb
+The results confirm that Bialkowski, Darolles and Le Fol (2008) ap-
+proaches improve execution but that DVWAP may yield superior results.
+The out-of-sample results are in Table 7. The results for ARMA and
+SETAR are qualitatively similar to those in Bialkowski, Darolles and Le Fol
+(2008, Table 6). Here, the results in Table 7 Panel A indicate that DVWAP,
+ARMA, and SETAR models yield lower tracking errors than HVWAP does.
+The models yield similar results on average (the row ‘All’). However, if the
+day is less volatile (i.e. spikiness is low), then DVWAP yields superior per-
+formance. If the day is more volatile, then ARMA yields the best results.
+The results in Table 7 Panel B indicate that DVWAP’s performance im-
+30
+provement is more consistent than that of the ARMA or SETAR models.
+Panel B contains the variance of δd, δarma and δsetar. It indicates that δd
+has the lowest variance. This suggests that the performance improvement
+in DVWAP is more consistent than the performance improvements in the
+ARMA or SETAR models are.
+The in-sample results are in Table 8. The in-sample results are consis-
+tent with the out-of-sample results. In particular, (1) DVWAP has a lower
+tracking error in some spikiness-sorts, but not in others, and (2) DVWAP’s
+tracking error has a lower variance than do the ARMA and SETAR models. 3
+Overall the results indicate the following. First, DVWAP can improve
+on the ARMA and SETAR approaches in Bialkowski, Darolles and Le Fol
+(2008). This performance improvement is more pronounced if the day is less
+volatile. And, this performance improvement does not necessarily hold across
+all market conditions. However, second, DVWAP’s performance improve-
+ment is more stable and consistent than that of the ARMA or the SETAR
+models. This indicates that DVWAP can improve over ARMA and SETAR
+in some market conditions and can yield more consistent improvements over
+HVWAP than the ARMA or SETAR models do.
+3It is important to note that Columns 1-3 of Table 8 and of Table Table 7 focus on the
+differences between the classic historical approach and the DVWAP, ARMA, and SETAR
+approaches. The results for the ARMA and SETAR models are similar in magnitude to
+those reported in Bialkowski, Darolles and Le Fol (2008).
+31
+3.3. Robustness and sensitivity
+This section ensures robustness that the model is robust to model speci-
+fication. First, the paper re-stimates Equation (6) using different numbers of
+lags. However, the results are qualitatively similar. Second, the results are
+robust to bin length. Equation (6) bases itself on 5-minute bins. Results are
+similar for 15 minute and 30 minute and 60 minute bins.
+Third, the paper ensures that the results hold after removing outlying
+bins that have unusually high volumes, which ordinarily correspond with
+significant corporate announcements. DVWAP’s out-performance increases
+after removing outlying bins. Fourth, Equation (6) uses three lagged differ-
+ences. The paper re-estimates the model with four and five lags. The results
+are not sensitive to the number of independent variables. Fifth, the paper
+estimates Equation (6) using GMM to control for endogeneity that would
+arise if anticipation of a volume spike influences lagged volume. The results
+hold in the GMM estimation.
+Sixth, the paper ensures that the results are robust to various values
+of ˉθ, ˆθ, and γ. To do this, it iterates through various combinations of the
+parameters.
+It examines values of θ from 0.99 to 0.80, and ˉθ from 1.01
+to 1.20.
+It also examines values of γ from 0.75 to 0.95.
+In all models,
+DVWAP improves on HVWAP. If the γ value is lower, then DVWAP reverts
+to HVWAP sooner; and thus, (a) the tracking increases, but (b) the standard
+deviation of the tracking error decreases. If θ is lower and/or ˉθ is higher, then
+(a) DVWAP’s mean improvement over HVWAP increases; that is, there is
+32
+lower average difference from the actual volume profile, but (b) the variance
+of the tracking error increases. In all cases, DVWAP has lower tracking error
+than HVWAP does.
+The multivariate results in Section 3.1.4 are robust to model specification.
+This paper re-estimates the models using a panel regression (with fixed stock-
+date effects), and finds similar results. Further, it replaces VOLVAR with
+the inter-day price-volatility (as a proxy for volatility) and replaces BaRatio
+with spread (as a proxy for liquidity) and finds similar results.
+The results are robust to the choice of an in-sample test. Table 3 and
+Table 8 report in-sample results. All other results (unreported for brevity)
+are qualitatively the same in in-sample tests. Unsurprisingly, DVWAP tends
+to perform better in in-sample tests than it does in out-of-sample tests.
+4. Conclusion
+This paper examines the trader’s optimal trading decision if there is
+random news (or noise). Random intraday information should influence a
+trader’s trading behaviour (Foster and Viswanathan, 1993, 1996).
+Thus,
+this paper proposes a DVWAP framework that enables informed traders to
+incorporate stock-specific information into a trading framework. Empirical
+results indicate that this can yield superior execution to a purely historical
+approach, or to the appraoches in Bialkowski, Darolles and Le Fol (2008),
+when estimated using a strong empirical model for intraday volume.
+This paper makes a key contribution to the algorithmic trading literature
+33
+by proposing a mechanism to incorporate intraday noise into an algorith-
+mic trading rule. This has become especially important due to the growing
+popularity of algorithmic trading.
+References
+Back, K., Cao, C.H., Willard, G.A., 2000. Imperfect competition among
+informed traders. Journal of Finance 55, 2117–2155.
+Barclay, M.J., Warner, J.B., 1993. Stealth trading and volatility: Which
+trades move prices? Journal of Financial Economics 34, 281–305.
+Barron, O.E., Karpoff, J.M., 2004. Information precision, transaction costs,
+and trading next term volume. Journal of Banking and Finance 28, 1207–
+1223.
+Bauer, R., Cosemans, M., Eichholz, P., 2009. Option trading and individual
+investor performance. Journal of Banking and Finance 33, 731–746.
+Bialkowski, J., Darolles, S., Le Fol, G., 2008. Improving VWAP strategies: A
+dynamic volume approach. Journal of Banking and Finance 32, 1709–1722.
+Brooks, R.M., Patel, A., Su, T., 2003. How the equity market responds to
+unanticipated events. Journal of Business 76, 109–133.
+Cao, C., Feild, L.C., Hanka, G., 2004. Does insider trading impair market
+liquidity? evidence from ipo lockup expirations. Journal of Financial and
+Quantitative Analysis 39, 25–46.
+34
+Chan, K., Fong, W.M., 2000. Trade size, order imbalance, and the volatility
+volume relation. Journal of Financial Economics 57, 247–273.
+Chang, C.C., Hseih, P.F., Lai, H.N., 2009. Do informed option investors
+predict stock returns? Evidence from the Taiwan stock exchange. Journal
+of Banking and Finance 33, 757–764.
+Chew, L.M., 2007. Algorithmic Trading: Influx of Trading Technologies in
+Asia. Research Report. Financial Insights.
+Comerton-Forde, C., 1999. Do trading rules impact on market efficiency?
+A comparison of opening procedures on the Australian and Jakarta Stock
+Exchanges. Pacific-Basin Finance Journal 7, 495–521.
+Cooney, J.W., Sias, R.W., 2004. Informed trading and order type. Journal
+of Banking and Finance 28, 1711–1743.
+Darrat, A.F., Zhong, M., Cheng, L.T.W., 2007. Intraday volume and volatil-
+itynext term relations with and without public news. Journal of Banking
+and Finance 31, 2711–2729.
+Fong, K.Y.L., Liu, W.M., 2010. Limit order revisions. Journal of Banking
+and Finance 34, 1873–1885.
+Foster, F.D., Viswanathan, S., 1993. The effect of public information and
+competition on trading volume and price volatility. Review of Financial
+Studies 6, 23–56.
+35
+Foster, F.D., Viswanathan, S., 1996. Strategic trading when agents forecast
+the forecasts of others. Journal of Finance 51, 1437–1478.
+Grossman, R.L., 2005. Marching Up the Learning Curve: The First Buy-Side
+Algorithmic Trading Survey. Research Report. Financial Insights.
+Inci, A.C., Lu, B., Seyhun, H.N., 2010. Intraday behavior of stock prices and
+trades around insider trading. Financial Management 39, 323–363.
+Johnson, T.C., 2008. Volume, liquidity, and liquidity risk. Journal of Finan-
+cial Economics 87, 388–417.
+Kakade, S.M., Kearns, M., Mansour, Y., Ortiz, L.E., 2004.
+Competitive
+algorithms for VWAP and limit order trading, in: Proceedings of the ACM
+Electronic Commerce Conference, pp. 189–198.
+Kang, M., 2010. Probability of information-based trading and the January
+effect. Journal of Banking and Finance 34, 2985–2994.
+Kearns, M., 2008. An Algorithmic Approach. Research Report. Banc of
+America.
+Kissell, R., Glantz, M., Malamut, R., 2004. A practical framework for es-
+timating transaction costs and developing optimal trading strategies to
+achieve best execution. Finance Research Letters 1, 35–46.
+Kissell, R., Malamut, R., 2006.
+Algorithmic decision-making framework.
+Journal of Trading 1, 12–21.
+36
+Lo, A.W., Wang, J., 2000. Trading volume: Definitions, data analysis, and
+implications of portfolio theory. Review of Financial Studies 13, 257–300.
+Madhavan, A., 2002. VWAP strategies. Trading 2002, 32–38.
+Muck, M., 2010. Trading strategies with partial access to the derivatives
+market. Journal of Banking and Finance 34, 1288–1298.
+Nofsinger, J.R., Prucyk, B., 2003. Option volume and volatility response to
+scheduled economic news releases. Journal of Futures Markets 23, 315–345.
+Petersen, M.A., 2009. Estimating standard errors in finance panel data sets:
+Comparing approaches. Review of Financial Studies 22, 435–480.
+Thapa, C., Poshakwale, S.S., 2010. International equity portfolio allocations
+and transaction costs. Journal of Banking and Finance 34, 2627–2638.
+Xu, X.E., Chen, P., Wu, C., 2006. Time and dynamic volume-volatility next
+term relation. Journal of Banking and Finance 30, 1535–1558.
+37
+Figure 1: Autocorrelation functions and partial autocorrelation functions for AAC
+0
+5
+10
+15
+20
+−0. 2
+0. 4
+0. 8
+L a g
+A C F
+( a )  H i s t o r i c a l  P r o f i l e  V o l u m e
+5
+10
+15
+20
+−0. 2
+0. 2
+L a g
+P a r t i a l  A C F
+(b) H
+i s t o r i c a l  P r o f i l e
+0
+5
+10
+15
+20
+−0. 2
+0. 4
+0. 8
+L a g
+A C F
+( c )  A c t u a l  V o l u m e
+5
+10
+15
+20
+−0. 2
+0. 0
+0. 2
+L a g
+P a r t i a l  A C F
+(d) A
+c t u a l  V o l u m
+0
+5
+10
+15
+20
+−0. 4
+0. 2
+0. 8
+L a g
+A C F
+( e )  D e c o m p o s e d  V o l u m e
+5
+10
+15
+20
+−0. 4
+−0. 1
+0. 2
+L a g
+P a r t i a l  A C F
+(f) D
+e c o m p o s e d  V o
+38
+Table 1: Univariate statistics for the whole sample
+Exhibit 1 contains univariate statistics for the whole sample. The statistics are for the
+tracking error for DVWAP and HVWAP. Tracking error for DVWAP (ϵd
+i,tb) or HVWAP
+(ϵh
+i,tb) is the absolute difference between the proportion of the order that DVWAP or
+HVWAP trades in bin t, and the proportion of total daily volume that trades in bin b.
+Thus, for DVWAP, tracking error is: ϵd
+i,tb = |vd
+i,tb −va
+i,tb|, where vd
+i,tb is the percentage of
+total that DVWAP trades in bin b and va
+i,tb is the percent of total daily volume that trades
+in bin b. Similarly, tracking error for HVWAP is ϵh
+i,tb = |vh
+i,tb −va
+i,tb|, where vh
+i,tb is the
+percent of total that HVWAP trades in bin b. The superscript a denotes significance at 1%
+on a difference in mean test (for means) and on a wilcoxon sign rank test (for medians).
+ϵd
+i,tb
+ϵh
+i,tb
+ϵd
+i,tb −ϵh
+i,tb
+(1)
+(2)
+(1)-(2)
+Panel A: 5 minute bins
+Mean
+1.068a
+1.084a
+-0.015a
+Median
+0.708a
+0.726a
+-0.001a
+Panel B: 15 minute bins
+Mean
+2.177a
+2.253a
+-0.076a
+Median
+1.512a
+1.588a
+-0.033a
+Panel D: 60 minute bins
+Mean
+3.227a
+3.398a
+-0.171a
+Median
+2.344a
+2.505a
+-0.172a
+39
+Table 2: Univariate results
+Table 2 contains univariate statistics for the whole sample sorted by contemporaneous intraday volume variance (Spikiness), historical
+intraday volume variance (VolVar) and historical inter-day price variance (PriceVar). Group 1 (10) has the lowest (highest) spikiness,
+VolVar, or PriceVar. Intraday volume variance is the variance of the number of shares traded in each bin b ∈[0, T]. ϵd
+i,tb is the difference
+between the percent of the total order traded in bin b and the percent of total daily volume traded in bin b: ϵd
+i,tb = |vd
+i,tb −va
+i,tb|.
+Similarly, ϵh
+i,tb = |vh
+i,tb −va
+i,tb|.
+Numbers in normal type are means.
+Numbers in italics are medians.
+The superscript a denotes
+significance at 1% in t-test (for means) and a wilcoxon sign rank test (for medians).
+Group
+Spikiness
+VolVar
+PriceVar
+ϵd
+i,tb
+ϵh
+i,tb
+ϵd
+i,tb −
+ϵh
+i,tb
+ϵd
+i,tb
+ϵh
+i,tb
+ϵd
+i,tb −
+ϵh
+i,tb
+ϵd
+i,tb
+ϵh
+i,tb
+ϵd
+i,tb −
+ϵh
+i,tb
+1
+1.073a
+1.091a
+-0.018a
+0.72a
+0.743a
+-0.023a
+0.987a
+0.998a
+-0.011a
+0.751a
+0.774a
+-0.023a
+0.508a
+0.533a
+-0.024a
+0.682a
+0.693a
+-0.011a
+2
+1.036a
+1.052a
+-0.016a
+0.821a
+0.838a
+-0.017a
+0.966a
+0.984a
+-0.018a
+0.72a
+0.739a
+-0.019a
+0.576a
+0.593a
+-0.016a
+0.657a
+0.676a
+-0.019a
+3
+1.035a
+1.052a
+-0.017a
+0.997a
+1.006a
+-0.009a
+0.992a
+1.004a
+-0.012a
+0.712a
+0.732a
+-0.02a
+0.698a
+0.709a
+-0.011a
+0.653a
+0.669a
+-0.016a
+4
+1.029a
+1.045a
+-0.016a
+1.046a
+1.057a
+-0.011a
+1.047a
+1.06a
+-0.013a
+0.702a
+0.72a
+-0.019a
+0.698a
+0.709a
+-0.012a
+0.709a
+0.725a
+-0.016a
+5
+0.69a
+0.708a
+-0.018a
+0.749a
+0.765a
+-0.016a
+0.655a
+0.676a
+-0.021a
+0.69a
+0.708a
+-0.018a
+0.749a
+0.765a
+-0.016a
+0.655a
+0.676a
+-0.021a
+6
+1.024a
+1.039a
+-0.015a
+1.118a
+1.132a
+-0.013a
+1.094a
+1.106a
+-0.013a
+0.683a
+0.7a
+-0.017a
+0.75a
+0.767a
+-0.017a
+0.736a
+0.752a
+-0.016a
+7
+1.033a
+1.048a
+-0.015a
+1.075a
+1.088a
+-0.013a
+1.017a
+1.032a
+-0.016a
+0.684a
+0.701a
+-0.017a
+0.732a
+0.749a
+-0.017a
+0.674a
+0.691a
+-0.017a
+8
+1.04a
+1.055a
+-0.015a
+1.23a
+1.246a
+-0.016a
+1.083a
+1.097a
+-0.015a
+0.671a
+0.688a
+-0.017a
+0.798a
+0.819a
+-0.021a
+0.729a
+0.747a
+-0.018a
+9
+1.113a
+1.126a
+-0.013a
+1.113a
+1.129a
+-0.015a
+1.109a
+1.122a
+-0.013a
+0.703a
+0.718a
+-0.015a
+0.755a
+0.774a
+-0.019a
+0.738a
+0.755a
+-0.016a
+40
+10
+1.28a
+1.293a
+-0.014a
+1.182a
+1.199a
+-0.017a
+1.154a
+1.173a
+-0.019a
+0.773a
+0.787a
+-0.014a
+0.738a
+0.756a
+-0.018a
+0.73a
+0.753a
+-0.023a
+41
+Table 3: In Sample Univariate results
+Table 3 contains in sample univariate statistics for the whole sample sorted by contemporaneous intraday volume variance (Spikiness),
+historical intraday volume variance (VolVar) and historical inter-day price variance (PriceVar). Group 1 (10) has the lowest (highest)
+spikiness, VolVar, or PriceVar.
+Intraday volume variance is the variance of the number of shares traded in each bin b ∈[0, T].
+ϵd
+i,tb is the difference between the percent of the total order traded in bin b and the percent of total daily volume traded in bin b:
+ϵd
+i,tb = |vd
+i,tb −va
+i,tb|. Similarly, ϵh
+i,tb = |vh
+i,tb −va
+i,tb|. Numbers in normal type are means. Numbers in italics are medians. The superscript
+a denotes significance at 1% in t-test (for means) and a wilcoxon sign rank test (for medians).
+Group
+Spikiness
+VolVar
+PriceVar
+ϵd
+i,tb
+ϵh
+i,tb
+ϵd
+i,tb −
+ϵh
+i,tb
+ϵd
+i,tb
+ϵh
+i,tb
+ϵd
+i,tb −
+ϵh
+i,tb
+ϵd
+i,tb
+ϵh
+i,tb
+ϵd
+i,tb −
+ϵh
+i,tb
+1
+1.070a
+1.091a
+-0.021a
+0.713a
+0.743a
+-0.030a
+0.983a
+0.998a
+-0.014a
+2
+1.029a
+1.052a
+-0.023a
+0.811a
+0.838a
+-0.027a
+0.957a
+0.984a
+-0.027a
+3
+1.030a
+1.052a
+-0.022a
+0.992a
+1.006a
+-0.014a
+0.987a
+1.004a
+-0.017a
+4
+1.025a
+1.045a
+-0.019a
+1.042a
+1.057a
+-0.015a
+1.046a
+1.060a
+-0.015a
+5
+1.018a
+1.034a
+-0.016a
+1.149a
+1.162a
+-0.014a
+1.006a
+1.031a
+-0.026a
+6
+1.020a
+1.039a
+-0.019a
+1.110a
+1.132a
+-0.022a
+1.083a
+1.106a
+-0.023a
+7
+1.026a
+1.048a
+-0.022a
+1.070a
+1.088a
+-0.018a
+1.007a
+1.032a
+-0.026a
+8
+1.035a
+1.055a
+-0.020a
+1.230a
+1.246a
+-0.016a
+1.078a
+1.097a
+-0.019a
+9
+1.105a
+1.126a
+-0.021a
+1.108a
+1.129a
+-0.021a
+1.108a
+1.122a
+-0.015a
+10
+1.271a
+1.293a
+-0.023a
+1.173a
+1.199a
+-0.025a
+1.144a
+1.173a
+-0.029a
+42
+Figure 2: Average Daily Deviations from Actual Volume
+0
+20
+40
+60
+80
+100
+0.9
+1.0
+1.1
+1.2
+Day
+Deviation from Actual Volume (% Difference)
+TVWAP − Actual
+DVWAP − Actual
+Figure 2 plots the daily values of (HVWAP-Actual) and (DVWAP-Actual)
+43
+Table 4: Improvements probabilities
+Table 4 examines the proportion percentage of bins for which DWVWAP has lower (or
+higher) tracking error. Tracking error for DVWAP. It sorts the sample by contempora-
+neous intraday volume variance (Spikiness), historical intraday volume variance (VolVar)
+and historical inter-day price variance (PriceVar). Group 1 (10) has the lowest (highest)
+spikiness, VolVar, or PriceVar. Tracking error for DVWAP (ϵd
+i,tb) or HVWAP (ϵh
+i,tb) is the
+absolute difference between the proportion of the order that DVWAP or HVWAP trades
+in bin b, and the proportion of total daily volume that trades in bin b. Thus, for DVWAP,
+tracking error is: ϵd
+i,tb = |vd
+i,tb −va
+i,tb|, where vd
+i,tb is the percentage of total that DVWAP
+trades in bin b and va
+i,tb is the percent of total daily volume that trades in bin b. Similarly,
+tracking error for HVWAP is ϵh
+i,tb = |vh
+i,tb −va
+i,tb|, where vh
+i,tb is the percent of total that
+HVWAP trades in bin b. The superscript a indicates significance at 1% in a Chi-Square
+test.
+Spikiness
+VolVar
+PriceVar
+Group
+ϵd
+i,tb >
+ϵh
+i,tb
+ϵd
+i,tb ≤
+ϵh
+i,tb
+ϵd
+i,tb >
+ϵh
+i,tb
+ϵd
+i,tb ≤
+ϵh
+i,tb
+ϵd
+i,tb >
+ϵh
+i,tb
+ϵd
+i,tb ≤
+ϵh
+i,tb
+1
+32.71a
+67.29a
+34.99a
+65.01a
+34.43a
+65.57a
+2
+33.39a
+66.61a
+34.70a
+65.30a
+33.25a
+66.75a
+3
+33.35a
+66.65a
+34.37a
+65.63a
+33.84a
+66.16a
+4
+33.81a
+66.19a
+34.94a
+65.06a
+33.87a
+66.13a
+5
+34.20a
+65.80a
+33.09a
+66.91a
+34.13a
+65.87a
+6
+34.16a
+65.84a
+33.36a
+66.64a
+33.92a
+66.08a
+7
+34.23a
+65.77a
+33.76a
+66.24a
+34.46a
+65.54a
+8
+34.50a
+65.50a
+32.77a
+67.23a
+33.57a
+66.43a
+9
+34.50a
+65.50a
+33.98a
+66.02a
+33.52a
+66.48a
+10
+34.11a
+65.89a
+32.58a
+67.42a
+33.54a
+66.46a
+44
+Table 5: Model Variable Definitions
+Variable
+Definition
+DIFF
+The absolute value of the difference between
+DVWAP’s tracking error HVWAP’s track-
+ing error (ϵd
+i,tb = |vd
+i,tb −va
+i,tb|) and HVWAP’s
+tracking error (ϵh
+i,tb = |vh
+i,tb −va
+i,tb|)
+IMPROVE
+Dummy variable that equals 1 if |vh
+i,tb −va
+i,tb|
+exceeds |vd
+i,tb −va
+i,tb| and equals 0 otherwise
+CORRECT
+Dummy variable that equals 1 if DVWAPA
+correctly predicts that volume will be higher
+or lower than the historical profile.
+That
+is, CORRECT equals 1 if either (vd
+i,tb >
+vh
+i,tb & va
+i,tb > vh
+i,tb) or (vd
+i,tb < vh
+i,tb & va
+i,tb <
+vh
+i,tb)
+VolVar
+Historical intra-day variance of the volume
+traded
+lnTradeSize
+Natural log of the average trade size
+lnDailyTrades
+Natural log of the historical average number
+of trades per day for the stock
+BaRatio
+Historical average ratio of the number of
+shares at the bid or ask to the average daily
+volume
+PriceVar
+Historical inter-day variance of the stock
+price
+45
+Table 6: DVWAP performance and volatility
+Exhibit 6 contains estimates Equation 10, Equation 11, and Equation 12. The dependent
+variable in Column 1 is ϵd
+i,tb −ϵh
+i,tb.
+The dependent variable in Column 2 equals 1 if
+|vh
+i,tb −va
+i,tb| exceeds |vd
+i,tb −va
+i,tb| and equals 0 otherwise . The dependent variable in
+Column 3 equals 1 if DVWAP correctly predicts that volume will be above or below
+the historical profile. Test-statistic denotes the regression F-statistic for the OLS model
+(Column 1), and the Wald χ2 statistic for the Probit models (Columns 2 and 3). All
+models use standard errors clustered by stock and by date.
+Numbers in brackets are
+p-values. Superscripts a, b, and c denote significance at 1%, 5% and 10%, respectively.
+DIFF
+IMPROVE
+CORRECT
+(1)
+(2)
+(3)
+lnDailyTrades
+-0.001
+-0.024a
+-0.013c
+[0.558]
+[0.001]
+[0.097]
+lnTradeSize
+0.003a
+-0.018a
+-0.022a
+[0.001]
+[0.007]
+[0.002]
+baRatio
+-0.006a
+0.019
+0.024c
+[0.002]
+[0.188]
+[0.085]
+volVar
+0.001b
+0.016a
+0.015a
+[0.020]
+[0.001]
+[0.009]
+volatility
+-0.002b
+0.004
+0.009
+[0.045]
+[0.645]
+[0.292]
+Constant
+-0.026c
+0.700a
+0.651a
+[0.053]
+[0.000]
+[0.000]
+Observations
+983640
+983640
+983640
+R-squared
+0.003
+0.004
+0.003
+Test-statistic
+4.12a
+39.06a
+24.11a
+46
+Table 7: Comparison with Bialkowski et al. (2008)
+Table 7 examines the performance of DVWAP, and the performance of the SETAR and ARMA models. For Panel A, The statistics
+in Columns 1, 2, and 3, are the improvement in tracking error for the ARMA, SETAR, and DVWAP models (δd, δarma, and δsetar,
+respectively). The statistics in Column 4 and Column 5 are the difference between the performance improvement of the ARMA and
+SETAR models versus DVWAP. For Panel B, Columns 1, 2, and 3 contain the variance of performance improvements (that is the
+variance of δd, δarma, and δsetar); Columns 4 and 5 contain the difference between the variances. The superscript a denotes significance
+at 1% significance in difference in mean tests (in Panel A) and in F-tests for difference in variance (in Panel B).
+Panel A: Means
+Spikiness Group
+ARMA
+SETAR
+DVWAP
+ARMA-DVWAP
+SETAR-DVWAP
+(1)
+(2)
+(3)
+(4=1-3)
+(5=2-3)
+All
+-0.01371
+-0.01363
+-0.0138
+0.00009a
+0.00017a
+1
+-0.0137
+-0.01359
+-0.01654
+0.00284a
+0.00294a
+2
+-0.01372
+-0.01364
+-0.01332
+-0.00041a
+-0.00032a
+3
+-0.01373
+-0.01363
+-0.01326
+-0.00046a
+-0.00037a
+4
+-0.01374
+-0.01365
+-0.01327
+-0.00047a
+-0.00038a
+5
+-0.01372
+-0.01363
+-0.01372
+-0.00001a
+0.00009a
+6
+-0.01372
+-0.01365
+-0.01449
+0.00077a
+0.00084a
+7
+-0.01372
+-0.01364
+-0.01408
+0.00036a
+0.00044a
+8
+-0.0137
+-0.01362
+-0.01433
+0.00064a
+0.00071a
+9
+-0.01371
+-0.01364
+-0.0127
+-0.00101a
+-0.00094a
+10
+-0.01368
+-0.01363
+-0.01201
+-0.00167a
+-0.00162a
+Panel B: Variances
+Spikiness Group
+ARMA
+SETAR
+DVWAP
+ARMA-DVWAP
+SETAR-DVWAP
+(1)
+(2)
+(3)
+(4=1-3)
+(5=2-3)
+All
+0.00564
+0.00554
+0.00396
+0.00169a
+0.00158a
+1
+0.0059
+0.00584
+0.00498
+0.00092a
+0.00086a
+2
+0.0058
+0.0056
+0.00392
+0.00188a
+0.00167a
+47
+3
+0.00567
+0.00547
+0.00382
+0.00185a
+0.00165a
+4
+0.00552
+0.0054
+0.00395
+0.00157a
+0.00145a
+5
+0.00539
+0.00524
+0.00391
+0.00148a
+0.00133a
+6
+0.00534
+0.00527
+0.00419
+0.00115a
+0.00108a
+7
+0.00524
+0.00519
+0.00389
+0.00135a
+0.0013a
+8
+0.00536
+0.0053
+0.00393
+0.00142a
+0.00136a
+9
+0.00577
+0.00573
+0.00366
+0.00211a
+0.00208a
+10
+0.00631
+0.00626
+0.00317
+0.00314a
+0.00309a
+48
+Table 8: In Sample Comparison with Bialkowski et al. (2008)
+Table 8 examines the insample performance of DVWAP, and the performance of the SETAR and ARMA models. For Panel A, The
+statistics in Columns 1, 2, and 3, are the improvement in tracking error for the ARMA, SETAR, and DVWAP models (δd, δarma, and
+δsetar, respectively). The statistics in Column 4 and Column 5 are the difference between the performance improvement of the ARMA
+and SETAR models versus DVWAP. For Panel B, Columns 1, 2, and 3 contain the variance of performance improvements (that is the
+variance of δd, δarma, and δsetar); Columns 4 and 5 contain the difference between the variances. The superscript a denotes significance
+at 1% significance in difference in mean tests (in Panel A) and in F-tests for difference in variance (in Panel B).
+Panel A: Means
+Spikiness Group
+ARMA
+SETAR
+DVWAP
+ARMA-DVWAP
+SETAR-DVWAP
+(1)
+(2)
+(3)
+(4=1-3)
+(5=2-3)
+2
+-0.01357
+-0.01358
+-0.01384
+0.00028a
+0.00026a
+3
+-0.01356
+-0.01358
+-0.01376
+0.00020a
+0.00019a
+4
+-0.01355
+-0.01357
+-0.01224
+-0.00132a
+-0.00133a
+5
+-0.01355
+-0.01356
+-0.01070
+-0.00285a
+-0.00286a
+6
+-0.01356
+-0.01352
+-0.01016
+-0.00340a
+-0.00337a
+7
+-0.01353
+-0.01347
+-0.01257
+-0.00095a
+-0.00090a
+8
+-0.01348
+-0.01340
+-0.01867
+0.00519a
+0.00527a
+9
+-0.01349
+-0.01337
+-0.01854
+0.00505a
+0.00517a
+10
+-0.01334
+-0.01319
+-0.01063
+-0.00271a
+-0.00256a
+Panel B: Variances
+Spikiness Group
+ARMA
+SETAR
+DVWAP
+ARMA-DVWAP
+SETAR-DVWAP
+(1)
+(2)
+(3)
+(4=1-3)
+(5=2-3)
+1
+0.00502
+0.00523
+0.00558
+-0.00056a
+-0.00035a
+2
+0.00550
+0.00568
+0.00466
+0.00084a
+0.00102a
+3
+0.00596
+0.00608
+0.00445
+0.00152a
+0.00163a
+4
+0.00645
+0.00653
+0.00381
+0.00264a
+0.00272a
+5
+0.00664
+0.00656
+0.00302
+0.00362a
+0.00355a
+6
+0.00659
+0.00644
+0.00288
+0.00371a
+0.00356a
+49
+7
+0.00610
+0.00592
+0.00323
+0.00287a
+0.00269a
+8
+0.00519
+0.00492
+0.00512
+0.00007a
+-0.00020a
+9
+0.00477
+0.00476
+0.00649
+-0.00172a
+-0.00174a
+10
+0.00468
+0.00453
+0.00350
+0.00118a
+0.00103a
+50

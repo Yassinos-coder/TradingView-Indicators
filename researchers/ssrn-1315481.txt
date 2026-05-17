@@ -1,0 +1,649 @@
+ 
+1
+ 
+VWAP Cost Excluding Own Trades 
+ 
+ 
+Gang Hu, Ph.D., CFA 
+Assistant Professor of Finance 
+Fidelity Term Chair 
+Babson College 
+121 Tomasso Hall 
+Babson Park, MA 02457 
+ 
+Phone: 781-239-4946 
+Fax: 781-239-5004 
+E-mail: ghu@babson.edu 
+ 
+ 
+Journal of Trading 2, Winter 2007, 30-34. 
+ 
+ 
+Abstract 
+VWAP (Volume-Weighted Average Price) Cost is a widely used measure for 
+execution quality.  However, many have criticized the VWAP Cost measure.  One of the 
+most frequent criticisms is that VWAP Cost includes the trader or institutional investor’s 
+own trades in the benchmark price.  This paper clarifies related issues by deriving a 
+simple mathematical relation between VWAP Cost including versus excluding own 
+trades.  This result enables computation of VWAP Cost excluding own trades without 
+having to explicitly identify the trader’s own trades in intraday market data.  This is 
+useful in practice because it is extremely difficult, if not impossible, to identify a 
+particular trader’s trades in intraday market data (e.g., the NYSE TAQ). 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+2
+VWAP Cost Excluding Own Trades 
+VWAP (Volume-Weighted Average Price) Cost, first introduced by Berkowitz, 
+Logue, and Noser (1988), is a widely used measure for execution quality.  For example, 
+Schwartz and Steil (2002) find that Chief Investment Officers rank VWAP performance 
+well above other criteria for evaluating how well their traders handle their orders. 
+The idea behind VWAP Cost is quite simple: comparing the trader’s own 
+execution price against the market “average” price during the trader’s trading window.  It 
+is very much the same philosophy behind comparing a mutual fund’s performance 
+against a market index return (e.g., the S&P 500).  A very nice analogy can be drawn 
+between the VWAP in the context of trading and the index in the context of investing.  
+VWAP Cost (multiplied by -1) is like the alpha in investment performance measurement.  
+Since we do not have a counterpart of the CAPM in trading, we simply benchmark a 
+trader against the average, i.e., the VWAP.  Trading to achieve the VWAP is like 
+managing an index fund to achieve the market index return.  If we call indexing “passive 
+investing,” then VWAP trading can be called “passive trading.”  Just like indexing has 
+become increasingly popular over the last several decades (partly inspired by extensive 
+academic research), VWAP trading has become more and more popular among 
+practitioners in recent years.  Conversations with Japanese and Hong Kong traders who 
+trade U.S. equity show that they are especially happy about this development.  Now, they 
+can put trading on “autopilot,” and go to sleep gracefully knowing that they will be able 
+to achieve the market average when they wake up. 
+“VWAP trading” (trading to achieve VWAP as the execution price) and “VWAP 
+Cost” (using VWAP as a benchmark price to measure an active trader’s execution 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+3
+quality) are very different concepts.  Simply achieving the VWAP does not mean that the 
+trader (broker) has abnormal skill, just like an index fund manager does not have 
+abnormal skill.  A trader (broker) has abnormal skill only if he can consistently beat the 
+VWAP, in other words, a consistently negative and significant VWAP Cost.  See Lert 
+(2001) and Hu (2005) for more detailed discussions regarding using VWAP as a 
+benchmark to measure execution quality. 
+However, many have criticized the VWAP Cost measure.  See, for example, 
+Schwartz and Steil (2002).  One of the most frequent criticisms is that VWAP Cost 
+includes the trader or institutional investor’s own trades in the benchmark price.  This is 
+not a new problem.  Note that we have a similar problem when we evaluate a mutual 
+fund’s performance using a market index as the benchmark, because stocks held by a 
+mutual fund are also part of the market index. 
+This paper clarifies related issues by deriving a simple mathematical relation 
+between VWAP Cost including versus excluding own trades.  This result enables 
+computation of VWAP Cost excluding own trades without having to explicitly identify 
+the trader’s own trades in intraday market data.  This is useful because it is extremely 
+difficult, if not impossible, to identify a particular trader’s trades in intraday market data. 
+ 
+Notation 
+Let me first define some notations: 
+own
+P
+: Trader’s own execution price.  It is also volume-weighted. 
+own
+V
+: Trader’s own volume – number of shares traded. 
+mkt
+VWAP
+: Volume-Weighted Average Price of all trades in the market. 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+4
+mkt
+V
+: Total market volume. 
+other
+VWAP
+: Volume-Weighted Average Price of all other traders’ trades, excluding 
+the trader’s own trades. 
+other
+V
+: Total trading volume by other traders, excluding the trader’s own trades. 
+own
+mkt
+V
+f
+V
+≡
+: Trader’s market share: the trader’s own volume as a fraction of total 
+market volume.  By definition, 0
+1
+f
+≤
+≤. 
+ 
+mkt
+VWAP
+ As a Weighted Average of 
+own
+P
+ and 
+other
+VWAP
+ 
+It is useful to think of 
+mkt
+VWAP
+ (the total market VWAP) as a weighted average / 
+convex combination of 
+own
+P
+ (the trader’s own execution price) and 
+other
+VWAP
+(VWAP of 
+other traders’ trades), with their respective market shares as weights.  We know the 
+following is true: 
+mkt
+own
+other
+mkt
+mkt
+own
+own
+other
+other
+V
+V
+V
+VWAP
+V
+P
+V
+VWAP
+V
+=
++
+
+
+⋅
+=
+⋅
++
+⋅
+
+ 
+In other words, the total market share volume should equal the sum of the trader’s 
+own shares traded and all other traders’ share volume.  Similarly, the total market dollar 
+volume should equal the sum of the trader’s own dollar volume and all other traders’ 
+dollar volume.  Hence, the following must be true: 
+(
+)
+1
+own
+other
+mkt
+own
+other
+mkt
+mkt
+own
+other
+V
+V
+VWAP
+P
+VWAP
+V
+V
+P
+f
+VWAP
+f
+=
+⋅
++
+⋅
+=
+⋅
++
+⋅
+−
+ 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+5
+Therefore, 
+mkt
+VWAP
+ is always somewhere between 
+own
+P
+ and 
+other
+VWAP
+.  
+mkt
+VWAP
+ 
+approaches 
+own
+P
+ as the trader’s market share, f , approaches 1.  
+mkt
+VWAP
+ approaches 
+other
+VWAP
+ as the trader’s market share, f , approaches 0. 
+ 
+Define VWAP Cost Including Versus Excluding Own Trades 
+For a buy order (add a minus sign in front of the right-hand side for a sell order), 
+we define: 
+own
+mkt
+own
+P
+VWAP
+VWAP Cost
+P
+−
+≡
+ 
+Note that the benchmark price, 
+mkt
+VWAP
+, includes the trader’s own trades.  
+Alternatively, we can define: 
+own
+other
+own
+P
+VWAP
+VWAP Cost Excluding Own Trades
+P
+−
+≡
+ 
+VWAP Cost can be thought of as execution quality compared to the market 
+average, while VWAP Cost Excluding Own Trades can be thought of as execution 
+quality compared to the average of everyone else.  The only difference is that the 
+benchmark price, 
+other
+VWAP
+, excludes the trader’s own trades.  However, 
+other
+VWAP
+ is not 
+directly observable.  It is extremely difficult, if not impossible, to identify a particular 
+trader’s trades in intraday market data (e.g., the NYSE TAQ). 
+Note that I use the trader’s own execution price, 
+own
+P
+, in the denominator.  
+Sometimes, the benchmark price, 
+mkt
+VWAP
+ or 
+other
+VWAP
+, is used in the denominator.  
+Both make sense and it may not make a big difference empirically.  I use this definition 
+for the following reasons: 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+6
+1) It makes it easier to compare results obtained using different benchmark 
+prices, because they all have the same denominator. 
+2) It makes it more convenient to compute the corresponding dollar trading cost 
+(simply multiply the trading cost measure by the dollar principal traded).  For 
+the same reason, it also makes it easier to compute aggregate trading costs. 
+3) The mathematical relation between VWAP Cost and VWAP Cost Excluding 
+Own Trades will hold exactly only if we use the trader’s own execution price 
+in the denominator.  If we use the benchmark price in the denominator, the 
+relation will only hold approximately. 
+ 
+Relation Between VWAP Cost Including Versus Excluding Own Trades 
+There is a simple mathematical relation between VWAP Cost (including own 
+trades) and VWAP Cost Excluding Own Trades: 
+1
+1
+VWAP Cost Excluding Own Trades
+VWAP Cost
+f
+
+
+=
+⋅
+
+−
+
+
+ 
+Proof: 
+Following from definitions: 
+own
+other
+own
+mkt
+P
+VWAP
+VWAP Cost Excluding Own Trades
+VWAP Cost
+P
+VWAP
+−
+=
+−
+ 
+we also have: 
+mkt
+own
+other
+mkt
+mkt
+own
+own
+other
+other
+V
+V
+V
+VWAP
+V
+P
+V
+VWAP
+V
+=
++
+
+
+⋅
+=
+⋅
++
+⋅
+
+ 
+ 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+7
+mkt
+mkt
+own
+own
+other
+other
+VWAP
+V
+P
+V
+VWAP
+V
+⋅
+−
+⋅
+⇒
+=
+ 
+ 
+(
+)
+(
+)
+mkt
+mkt
+own
+own
+own
+other
+own
+other
+own
+other
+mkt
+mkt
+own
+own
+other
+own
+other
+own
+mkt
+mkt
+other
+mkt
+own
+mkt
+other
+VWAP
+V
+P
+V
+P
+VWAP
+P
+V
+P
+V
+VWAP
+V
+P
+V
+V
+P
+V
+V
+VWAP
+V
+V
+V
+P
+VWAP
+V
+⋅
+−
+⋅
+⇒
+−
+=
+−
+⋅
+−
+⋅
++
+⋅
+=
+⋅
++
+−
+⋅
+=
+=
+−
+⋅
+ 
+ 
+1
+1
+1
+1
+1
+own
+other
+mkt
+other
+own
+own
+mkt
+other
+mkt
+mkt
+P
+VWAP
+V
+V
+V
+P
+VWAP
+V
+f
+V
+V
+−
+⇒
+=
+=
+=
+=
+−
+−
+−
+ 
+Therefore, 
+1
+1
+own
+other
+own
+mkt
+P
+VWAP
+VWAP Cost Excluding Own Trades
+VWAP Cost
+P
+VWAP
+f
+−
+=
+=
+−
+−
+ 
+QED. 
+ 
+Illustration of the Relation 
+The above relation is interesting. It means that, compared to VWAP Cost, VWAP 
+Cost Excluding Own Trades always overstates gains or losses.  The ratio of the two cost 
+measures is a monotonically increasing function of the trader’s own market share, f.  The 
+following table illustrates this relation: 
+ 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+8
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+As one can see, when the trader’s market share, f, is small, the difference between 
+the two measures is negligible.  The ratio of the two cost measures increases at an 
+increasing speed as the trader’s market share increases.  This can be seen in the following 
+two figures: one illustrating the relation over reasonable range of the market share 
+parameter (less than 80%), and the other plotting the entire parameter range. 
+1
+1.5
+2
+2.5
+3
+3.5
+4
+4.5
+5
+0%
+10%
+20%
+30%
+40%
+50%
+60%
+70%
+80%
+Trader's Market Share
+Ratio of Two Cost Measures
+ 
+Trader’s Market Share ( )
+f  
+Ratio of Two Cost Measures 
+1
+1
+f
+
+
+
+
+−
+
+
+ 
+1% 
+1.01 
+2% 
+1.02 
+5% 
+1.05 
+10% 
+1.11 
+20% 
+1.25 
+30% 
+1.43 
+50% 
+2 
+80% 
+5 
+99% 
+100 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+9
+ 
+0
+20
+40
+60
+80
+100
+120
+0%
+20%
+40%
+60%
+80%
+100%
+Trader's Market Share
+Ratio of Two Cost Measures
+ 
+ 
+ 
+Conclusion 
+VWAP Cost, though widely used, is frequently criticized for including the trader’s 
+own trades in the benchmark price.  I derive a simple mathematical relation between 
+VWAP Cost including versus excluding own trades.  The ratio of the two cost measures 
+is shown to be a direct function of only one parameter: the trader’s market share. 
+One can use this result to compute VWAP Cost Excluding Own Trades without 
+having to explicitly identify the trader’s own trades in intraday market data.  This is 
+useful in practice because it is extremely difficult, if not impossible, to identify a 
+particular trader’s trades in intraday market data. 
+ 
+Electronic copy available at: https://ssrn.com/abstract=1315481
+ 
+10
+ 
+Endnotes 
+For helpful comments and discussions, I thank Ginger Meng, Erik Sirri, George Sofianos, and my 
+former colleagues at Fidelity Management & Research Company, Global Equity Trading, 
+Trading Techniques & Measurement Group, especially Ani Chitaley, Arun Gorur, Peter Lert, 
+Mark Matthews, and Don Slowik.  All remaining errors and omissions are my own. 
+ 
+ 
+ 
+References 
+Berkowitz, Stephen A., Dennis E. Logue, and Eugene A. Noser, 1988, The total costs of 
+transacting on the NYSE, Journal of Finance 43, 97-112. 
+Hu, Gang, 2005, Measures of implicit trading costs and buy-sell asymmetry, Working 
+paper, Babson College, available at SSRN: http://ssrn.com/abstract=595621. 
+Lert, Peter, 2001, Methods of measuring transaction costs, In Brian Bruce, editor, 
+Transaction costs – a cutting-edge guide to best execution, Institutional Investor, 
+Inc., 44-48. 
+Schwartz, Robert A., and Benn Steil, 2002, Controlling institutional trading costs, 
+Journal of Portfolio Management 28, 39-49. 
+ 
+Electronic copy available at: https://ssrn.com/abstract=1315481

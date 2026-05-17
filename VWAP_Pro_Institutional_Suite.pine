@@ -52,8 +52,10 @@ reclaimHoldBars        = input.int(2, "Reclaim Hold Candles", minval=1, maxval=1
 strongBodyRatio        = input.float(0.6, "Strong Candle Body Ratio", minval=0.3, maxval=0.95, step=0.05, group=grpSignals)
 rejectionWickRatio     = input.float(1.2, "Rejection Wick / Body Ratio", minval=0.5, maxval=5.0, step=0.1, group=grpSignals)
 
-useCandleSizeFilter = input.bool(true, "Use Candle Size Filter (replaces volume)", group=grpFilters)
-candleSizeMaLength  = input.int(20, "Candle Size SMA Length", minval=1, group=grpFilters)
+// Relative volume filter — replaces candle size proxy (research: volume is the primary VWAP driver)
+useRelVolFilter = input.bool(true,  "Use Relative Volume Filter", group=grpFilters)
+relVolLength    = input.int(20,     "Relative Volume Length", minval=1, group=grpFilters)
+minRelVol       = input.float(0.8,  "Min Relative Volume Threshold", minval=0.1, maxval=3.0, step=0.1, group=grpFilters)
 useVolatilityFilter  = input.bool(true, "Use Volatility Filter", group=grpFilters)
 atrLength            = input.int(14, "ATR Length", minval=1, group=grpFilters)
 atrMaLength          = input.int(50, "ATR Baseline Length", minval=5, group=grpFilters)
@@ -61,6 +63,9 @@ atrRelativeThreshold = input.float(0.8, "Min ATR vs Baseline Ratio", minval=0.1,
 useChopFilter       = input.bool(true, "Use Chop Filter", group=grpFilters)
 chopLookback        = input.int(20, "Chop Filter Lookback", minval=5, group=grpFilters)
 chopMaxCrosses      = input.int(4, "Max VWAP Crosses In Lookback", minval=1, group=grpFilters)
+// VWAP/TWAP lead filter — gates continuation signals when institutional volume distribution is misaligned
+useVwapLeadFilter  = input.bool(false, "Use VWAP/TWAP Lead Filter (Continuation only)", group=grpFilters)
+vwapLeadThreshold  = input.float(0.3,  "Min VWAP/TWAP Spread (ATR units)", minval=0.05, maxval=2.0, step=0.05, group=grpFilters)
 
 useEmaFilter  = input.bool(true, "Use EMA Trend Filter", group=grpEma)
 showEmas      = input.bool(true, "Show EMAs on Chart", group=grpEma)
@@ -206,6 +211,22 @@ sessionCumP2V := sessionCumP2VNext
 [upper1, lower1, upper2, lower2, upper3, lower3] = bandCalc(sessionVwap, sessionSigma, band1Mult, band2Mult, band3Mult)
 
 //------------------------------------------------------------------------------
+// Session TWAP — equal-weighted price average, resets each session
+// Research (Kato 2017): VWAP vs TWAP spread reveals where volume clustered in session
+//------------------------------------------------------------------------------
+var float twapCumClose = 0.0
+var int   twapBarCount = 0
+
+if isNewSession
+    twapCumClose := close
+    twapBarCount := 1
+else
+    twapCumClose += close
+    twapBarCount  += 1
+
+sessionTwap = twapBarCount > 0 ? twapCumClose / float(twapBarCount) : na
+
+//------------------------------------------------------------------------------
 // Anchored VWAP
 //------------------------------------------------------------------------------
 int selectedAnchorTime = na
@@ -245,17 +266,21 @@ rsiTrendShortPass = not useRsiFilter or (rsiValue <= 50.0)
 //------------------------------------------------------------------------------
 // Filters
 //------------------------------------------------------------------------------
-candleRange   = math.max(high - low, syminfo.mintick)
-candleRangeMa = ta.sma(candleRange, candleSizeMaLength)
-atrValue      = ta.atr(atrLength)
-atrMa         = ta.sma(atrValue, atrMaLength)
+candleRange = math.max(high - low, syminfo.mintick)  // kept for candle behavior analysis below
+atrValue    = ta.atr(atrLength)
+atrMa       = ta.sma(atrValue, atrMaLength)
 
 bool inLondon              = not na(time(timeframe.period, londonSession))
 bool inNewYork             = not na(time(timeframe.period, newYorkSession))
 bool sessionSelectionEnabled = tradeLondon or tradeNewYork
 bool sessionWindowPass     = sessionSelectionEnabled ? ((tradeLondon and inLondon) or (tradeNewYork and inNewYork)) : true
 
-candleSizePass = not useCandleSizeFilter or (candleRange >= candleRangeMa * 0.85)
+// Relative volume filter — research-backed replacement for candle size proxy
+// (Białkowski et al. 2006/2008; Humphery-Jenner 2011: volume is the sole driver needed to track VWAP)
+volSma        = ta.sma(volume, relVolLength)
+relVol        = not na(volSma) and volSma > 0 ? volume / volSma : 1.0
+relVolPass    = not useRelVolFilter or (relVol >= minRelVol)
+
 volatilityPass = not useVolatilityFilter or (atrMa > 0 and atrValue >= atrMa * atrRelativeThreshold)
 timePass       = not useSessionFilter or sessionWindowPass
 
@@ -265,7 +290,42 @@ stateCrossCount = rollingCount(crossEvent, stateCrossLookback)
 chopCrossCount  = rollingCount(crossEvent, chopLookback)
 chopPass        = not useChopFilter or (chopCrossCount <= chopMaxCrosses)
 
-baseFiltersPass = candleSizePass and volatilityPass and timePass and chopPass
+baseFiltersPass = relVolPass and volatilityPass and timePass and chopPass
+
+//------------------------------------------------------------------------------
+// Session progress tracking and volume surprise
+// Research (Humphery-Jenner 2011; Białkowski et al. 2006): intraday volume follows a U-shape;
+// deviations above the expected level for each session period signal institutional activity.
+//------------------------------------------------------------------------------
+var int sessionBarCount     = 0
+var int estimatedSessionLen = 78  // sensible default (~6.5h at 5m); self-calibrates after first full session
+
+if isNewSession
+    if sessionBarCount > 5
+        estimatedSessionLen := sessionBarCount
+    sessionBarCount := 1
+else
+    sessionBarCount += 1
+
+sessionProgress = estimatedSessionLen > 0 ? sessionBarCount / float(estimatedSessionLen) : 0.5
+sessionPeriod   = sessionProgress <= 0.15 ? "OPEN" : sessionProgress >= 0.85 ? "CLOSE" : "MID"
+
+// Expected volume multiplier by U-shape position: higher at open/close, lower midday
+expectedVolMult = sessionProgress <= 0.15 ? 1.4 : sessionProgress >= 0.85 ? 1.3 : 0.8
+volSurprise     = relVol / expectedVolMult
+highVolSurprise = volSurprise >= 1.5  // volume is ≥50% above what's typical for this session period
+
+//------------------------------------------------------------------------------
+// VWAP vs TWAP divergence
+// Research (Kato 2017): VWAP tracks volume concentration; TWAP ignores it.
+// Positive spread → late-session volume dominates (institutional back-loading = trend conviction).
+// Negative spread → early-session volume dominates (front-loading).
+//------------------------------------------------------------------------------
+vwapTwapSpread = not na(sessionVwap) and not na(sessionTwap) and atrValue > 0 ? (sessionVwap - sessionTwap) / atrValue : 0.0
+
+// Gates continuation signals only — confirms volume distribution aligns with price trend direction
+vwapLeadLongPass  = not useVwapLeadFilter or (vwapTwapSpread >=  vwapLeadThreshold)
+vwapLeadShortPass = not useVwapLeadFilter or (vwapTwapSpread <= -vwapLeadThreshold)
 
 //------------------------------------------------------------------------------
 // Candle behavior analysis
@@ -365,8 +425,9 @@ bounceShortSetup = close < sessionVwap and high >= sessionVwap and strongBearish
 [rawContLong, rawContShort, rawMeanLong, rawMeanShort, rawReclaimLong, rawReclaimShort, rawBounceLong, rawBounceShort] = signalEngine(enableContinuation, enableMeanReversion, enableReclaim, enableBounce, baseFiltersPass, bullTrendMode, bearTrendMode, rangeMode, continuationLongSetup, continuationShortSetup, meanLongSetup, meanShortSetup, reclaimLongSetup, reclaimShortSetup, bounceLongSetup, bounceShortSetup)
 
 // Apply directional EMA + RSI filters post signal engine
-contLong    = rawContLong    and emaLongPass  and rsiTrendLongPass
-contShort   = rawContShort   and emaShortPass and rsiTrendShortPass
+// Continuation signals additionally gated by VWAP/TWAP lead filter (optional)
+contLong    = rawContLong    and emaLongPass  and rsiTrendLongPass  and vwapLeadLongPass
+contShort   = rawContShort   and emaShortPass and rsiTrendShortPass and vwapLeadShortPass
 meanLong    = rawMeanLong    and emaLongPass  and rsiMeanLongPass
 meanShort   = rawMeanShort   and emaShortPass and rsiMeanShortPass
 reclaimLong  = rawReclaimLong  and emaLongPass  and rsiTrendLongPass
@@ -464,17 +525,26 @@ plot(showEmas ? ema200Value : na, "EMA Slow", color=ema200Color, linewidth=2, fo
 plotshape(showSignals and showPrimarySignals and buySignal,  title="BUY Signal",  style=shape.labelup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="BUY",  textcolor=color.white, force_overlay=true)
 plotshape(showSignals and showPrimarySignals and sellSignal, title="SELL Signal", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0),  size=size.small, text="SELL", textcolor=color.white, force_overlay=true)
 
-plotshape(showSignals and showSetupTags and contLong,    title="CONT Long",    style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="CONT",    textcolor=color.white, force_overlay=true)
-plotshape(showSignals and showSetupTags and contShort,   title="CONT Short",   style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="CONT",    textcolor=color.white, force_overlay=true)
-plotshape(showSignals and showSetupTags and meanLong,    title="MEAN Long",    style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="MEAN",    textcolor=color.white, force_overlay=true)
-plotshape(showSignals and showSetupTags and meanShort,   title="MEAN Short",   style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="MEAN",    textcolor=color.white, force_overlay=true)
-plotshape(showSignals and showSetupTags and reclaimLong,  title="RECLAIM Long",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="RECLAIM", textcolor=color.white, force_overlay=true)
-plotshape(showSignals and showSetupTags and reclaimShort, title="RECLAIM Short", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="RECLAIM", textcolor=color.white, force_overlay=true)
-plotshape(showSignals and showSetupTags and bounceLong,  title="BOUNCE Long",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="BOUNCE",  textcolor=color.white, force_overlay=true)
-plotshape(showSignals and showSetupTags and bounceShort, title="BOUNCE Short", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="BOUNCE",  textcolor=color.white, force_overlay=true)
+// Setup tags — normal volume: plain label; high volume surprise (volSurprise ≥ 1.5): "!" suffix = institutional activity detected
+plotshape(showSignals and showSetupTags and contLong    and not highVolSurprise, title="CONT Long",        style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="CONT",      textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and contLong    and     highVolSurprise, title="CONT Long [!]",    style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="CONT !",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and contShort   and not highVolSurprise, title="CONT Short",       style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="CONT",      textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and contShort   and     highVolSurprise, title="CONT Short [!]",   style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="CONT !",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and meanLong    and not highVolSurprise, title="MEAN Long",        style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="MEAN",      textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and meanLong    and     highVolSurprise, title="MEAN Long [!]",    style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="MEAN !",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and meanShort   and not highVolSurprise, title="MEAN Short",       style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="MEAN",      textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and meanShort   and     highVolSurprise, title="MEAN Short [!]",   style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="MEAN !",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and reclaimLong  and not highVolSurprise, title="RECLAIM Long",      style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="RECLAIM",   textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and reclaimLong  and     highVolSurprise, title="RECLAIM Long [!]",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="RECLAIM !", textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and reclaimShort and not highVolSurprise, title="RECLAIM Short",     style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="RECLAIM",   textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and reclaimShort and     highVolSurprise, title="RECLAIM Short [!]", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="RECLAIM !", textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and bounceLong  and not highVolSurprise, title="BOUNCE Long",       style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="BOUNCE",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and bounceLong  and     highVolSurprise, title="BOUNCE Long [!]",   style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny, text="BOUNCE !",  textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and bounceShort and not highVolSurprise, title="BOUNCE Short",      style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="BOUNCE",    textcolor=color.white, force_overlay=true)
+plotshape(showSignals and showSetupTags and bounceShort and     highVolSurprise, title="BOUNCE Short [!]",  style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny, text="BOUNCE !",  textcolor=color.white, force_overlay=true)
 
 //------------------------------------------------------------------------------
-// Dashboard table
+// Dashboard table — 19 rows (0–18)
 //------------------------------------------------------------------------------
 C_BULL    = color.rgb(39, 174, 96)
 C_BEAR    = color.rgb(192, 57, 43)
@@ -503,21 +573,34 @@ ema50Color_  = close > ema50Value  ? C_BULL : C_BEAR
 rsiLabel  = str.tostring(math.round(rsiValue, 1))
 rsiColor_ = rsiValue >= rsiOverbought ? C_BEAR : rsiValue <= rsiOversold ? C_BULL : C_NEUTRAL
 
-candleSizeLabel = candleSizePass ? "PASS" : "FAIL"
-candleSizeColor = candleSizePass ? C_BULL : C_BEAR
-atrLabel        = volatilityPass ? "PASS" : "FAIL"
-atrColor_       = volatilityPass ? C_BULL : C_BEAR
-sessionLabel    = timePass        ? "PASS" : "FAIL"
-sessionColor_   = timePass        ? C_BULL : C_BEAR
-chopLabel       = chopPass        ? "PASS" : "FAIL"
-chopColor_      = chopPass        ? C_BULL : C_BEAR
-overallLabel    = baseFiltersPass ? "READY" : "BLOCKED"
-overallColor    = baseFiltersPass ? C_BULL  : C_BEAR
+// VWAP/TWAP spread — ATR-normalised; positive = volume back-loaded (bullish conviction)
+vwapTwapRounded = math.round(vwapTwapSpread, 2)
+vwapTwapLabel   = (vwapTwapRounded >= 0.0 ? "+" : "") + str.tostring(vwapTwapRounded) + " ATR"
+vwapTwapColor   = vwapTwapSpread >= vwapLeadThreshold ? C_BULL : vwapTwapSpread <= -vwapLeadThreshold ? C_BEAR : C_NEUTRAL
 
-slLabel  = na(lastSL) ? "—" : str.tostring(lastSL, format.mintick)
-tpLabel  = na(lastTP) ? "—" : str.tostring(lastTP, format.mintick)
+// Relative volume
+relVolRounded = math.round(relVol, 2)
+relVolLabel   = str.tostring(relVolRounded) + "x"
+relVolColor   = relVol >= 1.5 ? C_BULL : relVol >= minRelVol ? color.rgb(200, 190, 60) : C_BEAR
 
-var table dash = table.new(position.top_right, 2, 18,
+atrLabel   = volatilityPass ? "PASS" : "FAIL"
+atrColor_  = volatilityPass ? C_BULL : C_BEAR
+
+// Session: time-window pass + session period (e.g. "PASS · OPEN")
+sessionPeriodColor_ = sessionPeriod == "OPEN" ? color.rgb(255, 200, 50) : sessionPeriod == "CLOSE" ? color.rgb(255, 140, 50) : C_NEUTRAL
+sessionPassStr      = timePass ? "PASS" : "FAIL"
+sessionCombined     = sessionPassStr + " · " + sessionPeriod
+sessionCombinedColor = timePass ? sessionPeriodColor_ : C_BEAR
+
+chopLabel  = chopPass        ? "PASS" : "FAIL"
+chopColor_ = chopPass        ? C_BULL : C_BEAR
+overallLabel = baseFiltersPass ? "READY" : "BLOCKED"
+overallColor = baseFiltersPass ? C_BULL  : C_BEAR
+
+slLabel = na(lastSL) ? "—" : str.tostring(lastSL, format.mintick)
+tpLabel = na(lastTP) ? "—" : str.tostring(lastTP, format.mintick)
+
+var table dash = table.new(position.top_right, 2, 19,
      bgcolor=C_HEADER,
      border_color=color.rgb(35, 50, 75),
      border_width=1,
@@ -536,68 +619,72 @@ if showDashboard and barstate.islast
     table.merge_cells(dash, 0, 1, 1, 1)
 
     // Row 2 — bias
-    table.cell(dash, 0, 2, "Bias",          text_color=C_DIM,    bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 2, biasLabel,        text_color=biasColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 0, 2, "Bias",       text_color=C_DIM,    bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 2, biasLabel,    text_color=biasColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
 
     // Row 3 — VWAP slope
-    table.cell(dash, 0, 3, "VWAP Slope",    text_color=C_DIM,     bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 3, slopeLabel,       text_color=slopeColor, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 0, 3, "VWAP Slope", text_color=C_DIM,      bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 3, slopeLabel,   text_color=slopeColor,  bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
 
     // Row 4 — price vs VWAP
-    table.cell(dash, 0, 4, "vs VWAP",       text_color=C_DIM,       bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 4, vwapPosLabel,     text_color=vwapPosColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 0, 4, "vs VWAP",    text_color=C_DIM,         bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 4, vwapPosLabel, text_color=vwapPosColor,   bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
 
     // Row 5 — EMA 200
-    table.cell(dash, 0, 5, "EMA " + str.tostring(ema200Length), text_color=C_DIM,      bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 0, 5, "EMA " + str.tostring(ema200Length), text_color=C_DIM,       bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
     table.cell(dash, 1, 5, ema200Label,                          text_color=ema200Color_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
 
     // Row 6 — EMA 50
-    table.cell(dash, 0, 6, "EMA " + str.tostring(ema50Length),  text_color=C_DIM,     bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 6, ema50Label,                           text_color=ema50Color_, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 0, 6, "EMA " + str.tostring(ema50Length), text_color=C_DIM,      bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 6, ema50Label,                          text_color=ema50Color_, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
 
     // Row 7 — RSI
-    table.cell(dash, 0, 7, "RSI (" + str.tostring(rsiLength) + ")", text_color=C_DIM,   bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 0, 7, "RSI (" + str.tostring(rsiLength) + ")", text_color=C_DIM,    bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
     table.cell(dash, 1, 7, rsiLabel,                                  text_color=rsiColor_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
 
-    // Row 8 — section label
-    table.cell(dash, 0, 8, "LAST SIGNAL", text_color=C_DIM, bgcolor=C_SEP, text_size=size.tiny, text_halign=text.align_center)
-    table.cell(dash, 1, 8, "", bgcolor=C_SEP)
-    table.merge_cells(dash, 0, 8, 1, 8)
+    // Row 8 — VWAP/TWAP spread (new — institutional volume distribution)
+    table.cell(dash, 0, 8, "VWAP/TWAP",   text_color=C_DIM,         bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 8, vwapTwapLabel, text_color=vwapTwapColor,  bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
 
-    // Row 9 — signal name
-    table.cell(dash, 0, 9, lastSignalLabel, text_color=lastSignalColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_center)
-    table.cell(dash, 1, 9, "", bgcolor=C_ROW_A)
+    // Row 9 — section label
+    table.cell(dash, 0, 9, "LAST SIGNAL", text_color=C_DIM, bgcolor=C_SEP, text_size=size.tiny, text_halign=text.align_center)
+    table.cell(dash, 1, 9, "", bgcolor=C_SEP)
     table.merge_cells(dash, 0, 9, 1, 9)
 
-    // Row 10 — stop loss
-    table.cell(dash, 0, 10, "SL (1× ATR)", text_color=C_DIM,                    bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 10, slLabel,         text_color=color.rgb(192, 57, 43),   bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+    // Row 10 — signal name
+    table.cell(dash, 0, 10, lastSignalLabel, text_color=lastSignalColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 1, 10, "", bgcolor=C_ROW_A)
+    table.merge_cells(dash, 0, 10, 1, 10)
 
-    // Row 11 — take profit
-    table.cell(dash, 0, 11, "TP (2× ATR)",  text_color=C_DIM,                    bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 11, tpLabel,          text_color=color.rgb(39, 174, 96),   bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+    // Row 11 — stop loss
+    table.cell(dash, 0, 11, "SL (1× ATR)", text_color=C_DIM,                  bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 11, slLabel,        text_color=color.rgb(192, 57, 43), bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
 
-    // Row 12 — section label
-    table.cell(dash, 0, 12, "FILTERS", text_color=C_DIM, bgcolor=C_SEP, text_size=size.tiny, text_halign=text.align_center)
-    table.cell(dash, 1, 12, "", bgcolor=C_SEP)
-    table.merge_cells(dash, 0, 12, 1, 12)
+    // Row 12 — take profit
+    table.cell(dash, 0, 12, "TP (2× ATR)", text_color=C_DIM,                  bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 12, tpLabel,        text_color=color.rgb(39, 174, 96), bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
 
-    // Row 13 — candle size
-    table.cell(dash, 0, 13, "Candle Size",   text_color=C_DIM,          bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 13, candleSizeLabel,  text_color=candleSizeColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+    // Row 13 — section label
+    table.cell(dash, 0, 13, "FILTERS", text_color=C_DIM, bgcolor=C_SEP, text_size=size.tiny, text_halign=text.align_center)
+    table.cell(dash, 1, 13, "", bgcolor=C_SEP)
+    table.merge_cells(dash, 0, 13, 1, 13)
 
-    // Row 14 — volatility
-    table.cell(dash, 0, 14, "Volatility",    text_color=C_DIM,    bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 14, atrLabel,         text_color=atrColor_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+    // Row 14 — relative volume (replaces candle size proxy)
+    table.cell(dash, 0, 14, "Rel Volume",  text_color=C_DIM,      bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 14, relVolLabel,   text_color=relVolColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
 
-    // Row 15 — session
-    table.cell(dash, 0, 15, "Session",        text_color=C_DIM,        bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 15, sessionLabel,      text_color=sessionColor_, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+    // Row 15 — volatility
+    table.cell(dash, 0, 15, "Volatility",  text_color=C_DIM,    bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 15, atrLabel,      text_color=atrColor_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
 
-    // Row 16 — chop
-    table.cell(dash, 0, 16, "Chop",           text_color=C_DIM,     bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 16, chopLabel,         text_color=chopColor_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+    // Row 16 — session window + session period (e.g. "PASS · OPEN")
+    table.cell(dash, 0, 16, "Session",          text_color=C_DIM,                bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 16, sessionCombined,    text_color=sessionCombinedColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
 
-    // Row 17 — overall
-    table.cell(dash, 0, 17, "Overall",        text_color=C_DIM,      bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
-    table.cell(dash, 1, 17, overallLabel,      text_color=overallColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)
+    // Row 17 — chop
+    table.cell(dash, 0, 17, "Chop",       text_color=C_DIM,     bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 17, chopLabel,    text_color=chopColor_, bgcolor=C_ROW_B, text_size=size.small, text_halign=text.align_right)
+
+    // Row 18 — overall
+    table.cell(dash, 0, 18, "Overall",    text_color=C_DIM,      bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 18, overallLabel, text_color=overallColor, bgcolor=C_ROW_A, text_size=size.small, text_halign=text.align_right)

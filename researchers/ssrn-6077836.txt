@@ -1,0 +1,115 @@
+Munich Personal RePEc Archive
+Arbitrage Trading Strategy in Gold
+Futures
+Bell, Peter
+22 September 2019
+Online at https://mpra.ub.uni-muenchen.de/96124/
+MPRA Paper No. 96124, posted 27 Sep 2019 09:11 UTC
+ARBITRAGE IN GOLD PRICE
+1
+ABSTRACT
+There appears to be an arbitrage trading strategy in the gold market where you are "long" gold
+overnight, between the London Fix each day. Holding gold price exposure in this way produced
+reliable profits between 2000 and 2010. In fact, these reliable profits resemble the returns seen
+with a theoretical example of an inefficient market where a Bollinger Band trading strategy
+extracts arbitrage profits from a price series with mean reversion. 
+Keywords: 
+Finance 
+JEL Codes:
+C00 General
+ARBITRAGE IN GOLD PRICE
+2
+Arbitrage Trading Strategy in Gold Futures 
+Bell (2013) builds an example of a trading strategy and market model that show what 
+happens if there's a bug in the market and you can exploit it. What do arbitrage returns look 
+like? In simple terms, they are reliably winning trades. In the computational example from Bell 
+(2013), two thirds of the trades are winners and, over time, the average trade is the same 
+positive number. This is an "arbitrage strategy" and the distribution of returns is different from 
+another trading strategy in the paper that doesn’t earn arbitrage profits. 
+This theoretical example of an arbitrage strategy is useful as it gives us an indication of 
+what an inefficient market looks like. If we can find trading strategies in the wild that have 
+similar returns, then does that suggest the relevant market may be inefficient? The conclusion 
+of this theoretical exercise in Bell (2013) is a simple: if the trading strategy is able to produce 
+reliable profit, then the market is inefficient. What does "reliable" mean? To some degree, you 
+know it when you see it. 
+Bell (2019) describes a case where you do know it when you see it: a trading strategy 
+that produces a massive return over ten years with few losing trades. What trading rule 
+generated those gains? As in Manly (2019), it is going “long” the gold price between the PM 
+fix in London one day and selling at the AM fix the next day. That simple strategy earned 
+arbitrage profits from 2000 through 2010, suggesting the gold market was inefficient.
+LITERATURE
+Financial economists are quick to use the word “information” but slow to define it. Fama
+(1970) writes, "... the theory of efficient markets is concerned with whether prices at any point 
+in time "fully reflect" available information." One set of information that's always interesting 
+for a financial asset is it’s own previous prices. That’s where we get every stock price chart and 
+quotation – building blocks of our practical understanding of financial markets. 
+ARBITRAGE IN GOLD PRICE
+3
+Our understanding of markets continues to race ahead. In a 2011 paper titled "A 
+Computational View of Market Efficiency", Andrew Lo and co-authors present important 
+concepts and suggest that their framework can help "rationalize the technological arms race of 
+quantitative trading firms."
+Hasanhodzic, Lo, Viola (2011) describe a, "... simple model of market evolution, where 
+strategies impact the market by their decision to buy or sell. We show that the effect of optimal 
+strategies using memory m can lead to 'market conditions' that were not present initially, such 
+as (1) market spikes and (2) the possibility for a strategy using memory m' > m to make a 
+bigger profit." 
+Matching the stylized feature of "market spikes" is an interesting achievement and raises
+questions around methodology in finance. If a model can generate a pattern that is similar to 
+something seen in nature, then what kinds of comparisons can be made between the model and 
+real life?
+ARBITRAGE TRADING STRATEGY 
+A trading strategy that makes a profit two thirds of the time reliably over time is an 
+example of an "arbitrage trading strategy". The distribution of profits for the arbitrage trading 
+strategy in Bell (2013) has a roughly triangular distribution, ranging from -3 to +5. Roughly 
+33% of the trades give a loss and the average profit per trade is roughly 2. The average profit is 
+stable over time. If you ran that strategy over time, you’d earn a steady profit with few losses. 
+When the average profit per trade is a steady, positive number, the gains grow and grow.
+Distribution of returns for arbitrage trading strategy as in Bell (2013)
+ARBITRAGE IN GOLD PRICE
+4
+Depending on your position sizing rules, they may even compound. These kinds of 
+strategies can provide returns of a hundred-to-one over time.  Hundred baggers!
+Manly (2019) provides an example of a trading strategy that went a hundred-to-one 
+recently. Manly describes a simple trading strategy for the gold price, "Starting in 1970 when 
+the price of gold was $35 per ounce, if every day you bought at the price of the afternoon Gold 
+Fixing and sold 19.5 hours later at the price of the next day’s morning Gold Fixing price, your 
+$35 would now be worth $15,843."  That’s over four hundred to one!
+Profits to gold trading strategies, Manly (2019).
+That return is a surprising headline, but it’s not the whole story. If the trading strategy 
+has some big profit today and it loses it tomorrow, then what? This reliability is always an 
+important consideration, which ties in to the definition of risk as the potential for impairment of
+capital base rather than as volatility.
+Manly (2019) provides a chart of the performance of trading strategy over time. For the 
+period of time circa 2000-2010, the "overnight gold price" strategy earns steady profits. The 
+kind of profits you'd see with an arbitrage trading strategy, as in Bell (2013). Few losses, but 
+consistent gains.
+ARBITRAGE IN GOLD PRICE
+5
+In fact, the trading strategy goes twenty-to-one from 2000 to 2010 (Manly, 2019). In this
+10 year window, there were reliable profits to holding gold overnight between the London 
+Fixes each day. Oddly enough, there were reliable losses if you held gold during the day, from 
+the London AM fix to the PM one. 
+This discussion does not consider information on what was happening within each trade.
+It only considers the closing balance on each trade, sequentially. There is also no consideration 
+for transaction costs. There may be some hidden risks, but it is clear that arbitrage profits were 
+available for this trading strategy with steady gains over a 10 year period. 
+To more deeply consider if the gains are statistically significant, refer to non-parametric 
+statistical methods in Bell (2013). Note, it would be possible to run these tests on these gold-
+trading-strategies over time to see if there have been periods of time where the "overnight gold 
+trade" did not produce arbitrage profits and the market was less inefficient. 
+ARBITRAGE IN GOLD PRICE
+6
+REFERENCES 
+Bell, Peter N (2013): New Testing Procedures to Assess Market Efficiency with Trading Rules. 
+MPRA Paper 46701, University Library of Munich, Germany. Retrieved from 
+https://mpra.ub.uni-muenchen.de/46701/ 
+Bell, Peter N (2019): And to think that it's in the gold price, of all things!  #GoldAu.  Accessed 
+21 Sep 2019. https://ceo.ca/@Newton/and-to-think-that-its-in-the-gold-price-of-all-
+things-goldau
+Hasanhodzic, J., Lo, A., & Viola, E. (2011) A computational view of market efficiency, 
+Quantitative Finance, 2011, vol. 11, issue 7, 1043-1050.
+Manly, Ronan (2019). Rothschild emerges from the shadows for the Centenary of the London 
+Gold Fixing. BULLIONSTAR.COM. Accessed 16 Sep 2019 
+https://www.bullionstar.com/blogs/ronan-manly/rothschild-emerges-from-the-shadows-
+for-the-centenary-of-the-london-gold-fixing/ 
