@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `Weekly_ATR_Fib_Bias_Levels.pine` — Weekly ATR-derived Fibonacci bias levels overlay, providing dynamic support/resistance zones scaled to the current week's true range.
 - `VWAP_Pro_Institutional_Suite.pine` — Pine v6 institutional-grade VWAP indicator with multi-anchor VWAP, three-level deviation bands, market state engine (trend/range classification), signal system (continuation, mean reversion, reclaim, bounce), institutional filters (relative volume, volatility, chop, VWAP/TWAP lead), session overlays (London, New York), and on-chart performance dashboard.
 - `researchers/` — 7 SSRN academic papers on market microstructure, liquidity, and quantitative trading strategy; referenced as the theoretical foundation for indicator design decisions.
 - `docs/` — Project documentation: style guide, repository overview, getting-started guide, FAQ, and versioning/compatibility notes.
