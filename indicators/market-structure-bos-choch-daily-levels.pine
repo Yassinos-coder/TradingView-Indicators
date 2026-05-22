@@ -1,0 +1,344 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════
+// Market Structure: BOS / CHoCH + Daily Levels [Lab]
+// Description: Swing structure (HH/HL/LH/LL), BOS/CHoCH labels,
+//              S/R horizontal levels, and previous daily H/L.
+// ═══════════════════════════════════════════════════════════════════
+indicator("Market Structure: BOS / CHoCH + Daily Levels [Lab]",
+     overlay          = true,
+     max_labels_count = 500,
+     max_lines_count  = 500,
+     max_bars_back    = 500)
+
+// ─────────────────────────────────────────
+// INPUTS
+// ─────────────────────────────────────────
+pivotLen     = input.int(10,   "Pivot Length (L/R)",         minval = 2,  maxval = 50, group = "Swing Detection",
+     tooltip = "Bars on each side needed to confirm a swing. 10–20 gives higher-quality, less-frequent swings.")
+minSwingDist = input.int(5,    "Min Bars Between Swings",    minval = 1,               group = "Swing Detection",
+     tooltip = "Ignore a new swing if it appears fewer than this many bars after the last swing of the same type.")
+
+showBOS       = input.bool(true, "Show BOS",                  group = "Structure")
+showCHoCH     = input.bool(true, "Show CHoCH",                group = "Structure")
+showSwingLbls = input.bool(true, "Show HH / HL / LH / LL",   group = "Structure")
+
+showSR      = input.bool(true,   "Show S/R Levels",              group = "S/R Levels")
+maxSRLevels = input.int(10,      "Max Levels per Side",  minval = 3, maxval = 50, group = "S/R Levels")
+srMergePct  = input.float(0.15,  "Merge Within % of ATR", minval = 0.0, step = 0.05, group = "S/R Levels",
+     tooltip = "Pivots within this ATR percentage of an existing level are merged into one zone.")
+srLineStyle = input.string("Dashed", "Line Style", options = ["Solid", "Dashed", "Dotted"], group = "S/R Levels")
+
+showDailyLvls = input.bool(true, "Show Daily Levels",           group = "Daily Levels")
+prevDayCount  = input.int(1,     "Previous Days to Show",  minval = 1, maxval = 3, group = "Daily Levels",
+     tooltip = "Number of previous completed daily H/L pairs to draw. Use on intraday charts only.")
+
+bullColor  = input.color(color.new(#089981, 0), "Bull Color",       group = "Colors")
+bearColor  = input.color(color.new(#f23645, 0), "Bear Color",       group = "Colors")
+chochColor = input.color(color.new(color.orange, 0), "CHoCH Color", group = "Colors")
+dHighColor = input.color(color.new(color.teal,   0), "Daily High Color", group = "Colors")
+dLowColor  = input.color(color.new(color.purple, 0), "Daily Low Color",  group = "Colors")
+
+// ─────────────────────────────────────────
+// USER-DEFINED TYPE (from LuxAlgo pattern)
+// ─────────────────────────────────────────
+type fractal
+    float value
+    int   loc
+    bool  iscrossed
+
+// ─────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────
+f_lineStyle(s) =>
+    switch s
+        "Solid"  => line.style_solid
+        "Dashed" => line.style_dashed
+        =>          line.style_dotted
+
+atr14 = ta.atr(14)
+n     = bar_index
+
+// ─────────────────────────────────────────
+// SWING DETECTION (ta.pivothigh resolves pivotLen bars back)
+// ─────────────────────────────────────────
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low,  pivotLen, pivotLen)
+
+isSwingHigh    = not na(ph)
+isSwingLow     = not na(pl)
+swingHighPrice = isSwingHigh ? ph                  : na
+swingLowPrice  = isSwingLow  ? pl                  : na
+swingHighBar   = isSwingHigh ? bar_index[pivotLen] : na
+swingLowBar    = isSwingLow  ? bar_index[pivotLen] : na
+
+// ─────────────────────────────────────────
+// SWING ARRAYS + HH / HL / LH / LL
+// ─────────────────────────────────────────
+var float[]  shPrices = array.new<float>()
+var int[]    shBars   = array.new<int>()
+var string[] shTypes  = array.new<string>()
+
+var float[]  slPrices = array.new<float>()
+var int[]    slBars   = array.new<int>()
+var string[] slTypes  = array.new<string>()
+
+MAX_SWINGS = 40
+
+string newHighType = na
+string newLowType  = na
+
+if isSwingHigh
+    lastHBar = array.size(shBars) > 0 ? array.get(shBars, 0) : na
+    allowNew = na(lastHBar) or (swingHighBar - lastHBar >= minSwingDist)
+    if allowNew
+        lastHP      = array.size(shPrices) > 0 ? array.get(shPrices, 0) : na
+        newHighType := na(lastHP) ? "HH" : swingHighPrice > lastHP ? "HH" : "LH"
+        array.unshift(shPrices, swingHighPrice)
+        array.unshift(shBars,   swingHighBar)
+        array.unshift(shTypes,  newHighType)
+        while array.size(shPrices) > MAX_SWINGS
+            array.pop(shPrices)
+        while array.size(shBars) > MAX_SWINGS
+            array.pop(shBars)
+        while array.size(shTypes) > MAX_SWINGS
+            array.pop(shTypes)
+
+if isSwingLow
+    lastLBar = array.size(slBars) > 0 ? array.get(slBars, 0) : na
+    allowNew = na(lastLBar) or (swingLowBar - lastLBar >= minSwingDist)
+    if allowNew
+        lastLP     = array.size(slPrices) > 0 ? array.get(slPrices, 0) : na
+        newLowType := na(lastLP) ? "HL" : swingLowPrice < lastLP ? "LL" : "HL"
+        array.unshift(slPrices, swingLowPrice)
+        array.unshift(slBars,   swingLowBar)
+        array.unshift(slTypes,  newLowType)
+        while array.size(slPrices) > MAX_SWINGS
+            array.pop(slPrices)
+        while array.size(slBars) > MAX_SWINGS
+            array.pop(slBars)
+        while array.size(slTypes) > MAX_SWINGS
+            array.pop(slTypes)
+
+// ─────────────────────────────────────────
+// TREND STATE (drives swing label color)
+// ─────────────────────────────────────────
+lastHighType = array.size(shTypes) > 0 ? array.get(shTypes, 0) : ""
+lastLowType  = array.size(slTypes) > 0 ? array.get(slTypes, 0) : ""
+bullStruct   = lastLowType == "HL" and lastHighType == "HH"
+bearStruct   = lastLowType == "LL" and lastHighType == "LH"
+structColor  = bullStruct ? bullColor : bearStruct ? bearColor : color.gray
+
+// ─────────────────────────────────────────
+// BOS / CHoCH (LuxAlgo pattern)
+// — fractal type tracks the active swing level
+// — os (order state) distinguishes BOS from CHoCH
+// — crossover/under evaluated unconditionally, then gated
+// ─────────────────────────────────────────
+var upper = fractal.new(na, na, true)
+var lower = fractal.new(na, na, true)
+var int os = 0   // 1 = last break was bullish, -1 = bearish
+
+// Update fractals from new confirmed swings
+if not na(newHighType)
+    upper.value    := swingHighPrice
+    upper.loc      := swingHighBar
+    upper.iscrossed := false
+
+if not na(newLowType)
+    lower.value    := swingLowPrice
+    lower.loc      := swingLowBar
+    lower.iscrossed := false
+
+// Evaluate crosses unconditionally (required in v6 — CW10002)
+crossedAbove = ta.crossover(close,  upper.value)
+crossedBelow = ta.crossunder(close, lower.value)
+
+// Gate: only act when the fractal hasn't already been crossed
+bullBreak = crossedAbove and not upper.iscrossed and not na(upper.value)
+bearBreak = crossedBelow and not lower.iscrossed and not na(lower.value)
+
+isBullBOS   = bullBreak and os >= 0
+isBullCHoCH = bullBreak and os == -1
+isBearBOS   = bearBreak and os <= 0
+isBearCHoCH = bearBreak and os == 1
+
+// Capture before state update (needed for drawing)
+float capUpperVal = upper.value
+int   capUpperLoc = upper.loc
+float capLowerVal = lower.value
+int   capLowerLoc = lower.loc
+
+if bullBreak
+    upper.iscrossed := true
+    os := 1
+
+if bearBreak
+    lower.iscrossed := true
+    os := -1
+
+// ─────────────────────────────────────────
+// S/R LEVELS (extending right from each swing)
+// ─────────────────────────────────────────
+var float[] resLevels = array.new<float>()
+var line[]  resLines  = array.new<line>()
+var float[] supLevels = array.new<float>()
+var line[]  supLines  = array.new<line>()
+
+if showSR and not na(newHighType)
+    float lvl  = swingHighPrice
+    bool  mrgd = false
+    int   sz   = math.min(array.size(resLevels), array.size(resLines))
+    if sz > 0
+        for i = 0 to sz - 1
+            dist = math.abs(array.get(resLevels, i) - lvl)
+            if atr14 > 0 and dist <= atr14 * srMergePct
+                avg = (array.get(resLevels, i) + lvl) / 2.0
+                array.set(resLevels, i, avg)
+                ln = array.get(resLines, i)
+                line.set_y1(ln, avg)
+                line.set_y2(ln, avg)
+                mrgd := true
+                break
+    if not mrgd
+        array.unshift(resLevels, lvl)
+        array.unshift(resLines,  line.new(swingHighBar, lvl, n, lvl,
+             extend = extend.right, color = color.new(bearColor, 50),
+             style  = f_lineStyle(srLineStyle), width = 1))
+        while array.size(resLevels) > maxSRLevels
+            array.pop(resLevels)
+        while array.size(resLines) > maxSRLevels
+            ln = array.pop(resLines)
+            line.delete(ln)
+
+if showSR and not na(newLowType)
+    float lvl  = swingLowPrice
+    bool  mrgd = false
+    int   sz   = math.min(array.size(supLevels), array.size(supLines))
+    if sz > 0
+        for i = 0 to sz - 1
+            dist = math.abs(array.get(supLevels, i) - lvl)
+            if atr14 > 0 and dist <= atr14 * srMergePct
+                avg = (array.get(supLevels, i) + lvl) / 2.0
+                array.set(supLevels, i, avg)
+                ln = array.get(supLines, i)
+                line.set_y1(ln, avg)
+                line.set_y2(ln, avg)
+                mrgd := true
+                break
+    if not mrgd
+        array.unshift(supLevels, lvl)
+        array.unshift(supLines,  line.new(swingLowBar, lvl, n, lvl,
+             extend = extend.right, color = color.new(bullColor, 50),
+             style  = f_lineStyle(srLineStyle), width = 1))
+        while array.size(supLevels) > maxSRLevels
+            array.pop(supLevels)
+        while array.size(supLines) > maxSRLevels
+            ln = array.pop(supLines)
+            line.delete(ln)
+
+// ─────────────────────────────────────────
+// DAILY HIGH / LOW LEVELS
+// lookahead_off + high[1]/low[1] = previous completed day, no repaint
+// ─────────────────────────────────────────
+dHigh1 = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_off)
+dLow1  = request.security(syminfo.tickerid, "D", low[1],  lookahead = barmerge.lookahead_off)
+dHigh2 = request.security(syminfo.tickerid, "D", high[2], lookahead = barmerge.lookahead_off)
+dLow2  = request.security(syminfo.tickerid, "D", low[2],  lookahead = barmerge.lookahead_off)
+dHigh3 = request.security(syminfo.tickerid, "D", high[3], lookahead = barmerge.lookahead_off)
+dLow3  = request.security(syminfo.tickerid, "D", low[3],  lookahead = barmerge.lookahead_off)
+
+var int currDayStart = 0
+if ta.change(time("D")) != 0 or barstate.isfirst
+    currDayStart := n
+
+var line  dh1Ln  = na
+var line  dl1Ln  = na
+var line  dh2Ln  = na
+var line  dl2Ln  = na
+var line  dh3Ln  = na
+var line  dl3Ln  = na
+var label dh1Lbl = na
+var label dl1Lbl = na
+
+if showDailyLvls and barstate.islast
+    line.delete(dh1Ln)
+    line.delete(dl1Ln)
+    label.delete(dh1Lbl)
+    label.delete(dl1Lbl)
+    dh1Ln  := line.new(currDayStart, dHigh1, n, dHigh1,
+         extend = extend.right, color = dHighColor, style = line.style_dashed, width = 1)
+    dl1Ln  := line.new(currDayStart, dLow1,  n, dLow1,
+         extend = extend.right, color = dLowColor,  style = line.style_dashed, width = 1)
+    dh1Lbl := label.new(n + 1, dHigh1, "PDH",
+         style = label.style_label_left, color = color.new(dHighColor, 70),
+         textcolor = color.white, size = size.small)
+    dl1Lbl := label.new(n + 1, dLow1, "PDL",
+         style = label.style_label_left, color = color.new(dLowColor, 70),
+         textcolor = color.white, size = size.small)
+
+    if prevDayCount >= 2
+        line.delete(dh2Ln)
+        line.delete(dl2Ln)
+        dh2Ln := line.new(currDayStart, dHigh2, n, dHigh2,
+             extend = extend.right, color = color.new(dHighColor, 40), style = line.style_dotted, width = 1)
+        dl2Ln := line.new(currDayStart, dLow2,  n, dLow2,
+             extend = extend.right, color = color.new(dLowColor,  40), style = line.style_dotted, width = 1)
+
+    if prevDayCount >= 3
+        line.delete(dh3Ln)
+        line.delete(dl3Ln)
+        dh3Ln := line.new(currDayStart, dHigh3, n, dHigh3,
+             extend = extend.right, color = color.new(dHighColor, 60), style = line.style_dotted, width = 1)
+        dl3Ln := line.new(currDayStart, dLow3,  n, dLow3,
+             extend = extend.right, color = color.new(dLowColor,  60), style = line.style_dotted, width = 1)
+
+// ─────────────────────────────────────────
+// PLOTTING / DISPLAY
+// ─────────────────────────────────────────
+
+// Swing labels (HH / LH / HL / LL) — no connecting lines (LuxAlgo pattern)
+if not na(newHighType) and showSwingLbls
+    label.new(swingHighBar, swingHighPrice, newHighType,
+         style = label.style_label_down, textcolor = color.white,
+         color = structColor, size = size.small)
+
+if not na(newLowType) and showSwingLbls
+    label.new(swingLowBar, swingLowPrice, newLowType,
+         style = label.style_label_up, textcolor = color.white,
+         color = structColor, size = size.small)
+
+// BOS — horizontal line from fractal to break bar, label centered on line (LuxAlgo pattern)
+if showBOS
+    if isBullBOS and not na(capUpperLoc)
+        line.new(capUpperLoc, capUpperVal, n, capUpperVal,
+             color = bullColor, width = 1)
+        label.new(int(math.avg(n, capUpperLoc)), capUpperVal, "BOS",
+             style = label.style_label_down,
+             color = color.new(color.white, 100),
+             textcolor = bullColor, size = size.tiny)
+
+    if isBearBOS and not na(capLowerLoc)
+        line.new(capLowerLoc, capLowerVal, n, capLowerVal,
+             color = bearColor, width = 1)
+        label.new(int(math.avg(n, capLowerLoc)), capLowerVal, "BOS",
+             style = label.style_label_up,
+             color = color.new(color.white, 100),
+             textcolor = bearColor, size = size.tiny)
+
+// CHoCH — same structure, different color, wider line to stand out
+if showCHoCH
+    if isBullCHoCH and not na(capUpperLoc)
+        line.new(capUpperLoc, capUpperVal, n, capUpperVal,
+             color = chochColor, width = 2)
+        label.new(int(math.avg(n, capUpperLoc)), capUpperVal, "CHoCH",
+             style = label.style_label_down,
+             color = color.new(color.white, 100),
+             textcolor = chochColor, size = size.tiny)
+
+    if isBearCHoCH and not na(capLowerLoc)
+        line.new(capLowerLoc, capLowerVal, n, capLowerVal,
+             color = chochColor, width = 2)
+        label.new(int(math.avg(n, capLowerLoc)), capLowerVal, "CHoCH",
+             style = label.style_label_up,
+             color = color.new(color.white, 100),
+             textcolor = chochColor, size = size.tiny)
