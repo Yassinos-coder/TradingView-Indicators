@@ -1,0 +1,940 @@
+//@version=6
+// ============================================================================
+// ICT / SMC Strategy
+// ----------------------------------------------------------------------------
+// Pipeline:  Liquidity Sweep -> MSS -> Displacement -> FVG / OB / Breaker
+//            -> OTE Retracement -> Entry -> Opposite-Side Liquidity Target
+//
+// Modules:   Structure (BOS/MSS/CHoCH) | Liquidity (EQH/EQL, PDH/PDL, Asian,
+//            Weekly, Session) | Displacement | FVG | Order Block | Breaker |
+//            OTE / Premium-Discount | Session Killzones | HTF Bias |
+//            Risk Management | Dashboard
+//
+// Recommended starting settings (override in inputs):
+//   XAUUSD  M5/M15  pivot=5  dispMult=1.5  RR=1:3
+//   EURUSD  M15/H1  pivot=6  dispMult=1.7  RR=1:3
+//   GBPUSD  M15/H1  pivot=6  dispMult=1.8  RR=1:3
+//   NAS100  M5/M15  pivot=4  dispMult=1.4  RR=1:2
+//   US30    M5/M15  pivot=4  dispMult=1.4  RR=1:2
+// ============================================================================
+
+strategy("ICT SMC Strategy", "ICT SMC",
+     overlay              = true,
+     pyramiding           = 0,
+     initial_capital      = 10000,
+     default_qty_type     = strategy.percent_of_equity,
+     default_qty_value    = 1,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.02,
+     slippage             = 2,
+     process_orders_on_close = true,
+     calc_on_every_tick   = false,
+     max_boxes_count      = 500,
+     max_lines_count      = 500,
+     max_labels_count     = 500)
+
+// ============================================================================
+// INPUT GROUPS
+// ============================================================================
+grpCore      = "Core"
+grpStructure = "Market Structure"
+grpLiquidity = "Liquidity Pools"
+grpDisplace  = "Displacement"
+grpFvg       = "Fair Value Gaps"
+grpOb        = "Order Blocks"
+grpBreaker   = "Breaker Blocks"
+grpOte       = "OTE / Premium-Discount"
+grpHtf       = "Higher Timeframe Bias"
+grpSessions  = "Session Filters"
+grpRisk      = "Risk Management"
+grpVisuals   = "Visuals"
+grpDashboard = "Dashboard"
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+// Core
+confluenceLookback = input.int(10, "Confluence Lookback (bars)", minval=2, maxval=50, group=grpCore, tooltip="Window in which MSS, sweep and displacement must occur together to validate an entry.")
+showAllVisuals     = input.bool(true, "Master Visual Toggle", group=grpCore)
+
+// Structure
+pivotLen  = input.int(5, "Pivot Length", minval=2, maxval=20, group=grpStructure)
+showMss   = input.bool(false, "Show MSS / BOS / CHoCH Labels", group=grpStructure)
+
+// Liquidity
+eqTickTol     = input.int(2, "Equal H/L Tolerance (ticks)", minval=0, group=grpLiquidity)
+maxLiq        = input.int(30, "Max Liquidity Pools Tracked", minval=5, group=grpLiquidity)
+sweepWindow   = input.int(3, "Sweep Confirmation Window (bars)", minval=0, maxval=10, group=grpLiquidity, tooltip="Max bars between pierce and close-back-above for a sweep to count. 0 = strict same-bar sweep.")
+trackEqHL     = input.bool(true, "Track Equal Highs/Lows", group=grpLiquidity)
+trackPDHL     = input.bool(true, "Track PDH / PDL", group=grpLiquidity)
+trackAsian    = input.bool(true, "Track Asian H/L", group=grpLiquidity)
+trackWeekly   = input.bool(true, "Track Weekly H/L", group=grpLiquidity)
+asianStart    = input.session("0000-0700", "Asian Session", group=grpLiquidity)
+asianTz       = input.string("Europe/London", "Asian Timezone", group=grpLiquidity)
+showLiquidity = input.bool(false, "Show Liquidity Levels", group=grpLiquidity)
+
+// Displacement
+atrLen     = input.int(14, "ATR Length", minval=1, group=grpDisplace)
+dispMult   = input.float(1.5, "Displacement ATR Multiplier", minval=0.1, step=0.1, group=grpDisplace)
+dispClose  = input.float(0.25, "Close Within X% of Range", minval=0.05, maxval=0.5, step=0.05, group=grpDisplace, tooltip="Bullish displacement requires close in the top X% of the candle range.")
+
+// FVG
+fvgEntryMode = input.string("Midpoint", "FVG Entry Mode", options=["First Touch","Midpoint","Full Mitigation"], group=grpFvg)
+showFvg      = input.bool(false, "Show FVGs", group=grpFvg)
+maxFvg       = input.int(20, "Max FVGs Tracked", minval=1, group=grpFvg)
+
+// Order Block
+obMode = input.string("Body", "OB Boundary Mode", options=["Wick","Body"], group=grpOb)
+showOb = input.bool(false, "Show Order Blocks", group=grpOb)
+maxOb  = input.int(20, "Max OBs Tracked", minval=1, group=grpOb)
+
+// Breaker
+showBreaker = input.bool(false, "Show Breaker Blocks", group=grpBreaker)
+maxBreaker  = input.int(20, "Max Breakers Tracked", minval=1, group=grpBreaker)
+
+// OTE
+useOte      = input.bool(true, "Require OTE Zone", group=grpOte)
+showOte     = input.bool(false, "Show OTE Zone", group=grpOte)
+fibA        = input.float(0.618, "Fib Entry 1", minval=0.5, maxval=0.95, step=0.001, group=grpOte)
+fibB        = input.float(0.705, "Fib Entry 2", minval=0.5, maxval=0.95, step=0.001, group=grpOte)
+fibC        = input.float(0.79,  "Fib Entry 3", minval=0.5, maxval=0.95, step=0.001, group=grpOte)
+usePremDisc = input.bool(true, "Premium/Discount Filter", group=grpOte)
+
+// HTF
+useHtfBias = input.bool(true, "Use HTF Bias Filter", group=grpHtf)
+htfRes     = input.timeframe("60", "HTF Resolution", options=["15","60","240","D"], group=grpHtf)
+
+// Sessions
+useSessionFilter = input.bool(true, "Use Session Killzones", group=grpSessions)
+tradeLondon      = input.bool(true, "London Killzone", group=grpSessions)
+londonSess       = input.session("0700-1000", "London Window", group=grpSessions)
+londonTz         = input.string("Europe/London", "London TZ", group=grpSessions)
+tradeNY          = input.bool(true, "New York Killzone", group=grpSessions)
+nySess           = input.session("0830-1100", "New York Window", group=grpSessions)
+nyTz             = input.string("America/New_York", "NY TZ", group=grpSessions)
+tradePM          = input.bool(true, "PM Reversal Window", group=grpSessions)
+pmSess           = input.session("1330-1500", "PM Window", group=grpSessions)
+
+// Risk
+tpMode      = input.string("Fixed RR", "TP Mode", options=["Fixed RR","Liquidity Target","Opposing FVG"], group=grpRisk)
+rrChoice    = input.string("1:3", "Risk:Reward", options=["1:1","1:2","1:3","1:4","1:5"], group=grpRisk)
+riskPctStr  = input.string("0.5", "Risk %", options=["0.25","0.5","1","2"], group=grpRisk)
+slBufTicks  = input.int(3, "SL Buffer (ticks)", minval=0, group=grpRisk)
+
+// Visuals
+bullFvgCol  = input.color(color.new(color.green,   80), "Bull FVG", group=grpVisuals)
+bearFvgCol  = input.color(color.new(color.red,     80), "Bear FVG", group=grpVisuals)
+bullObCol   = input.color(color.new(color.teal,    70), "Bull OB",  group=grpVisuals)
+bearObCol   = input.color(color.new(color.fuchsia, 70), "Bear OB",  group=grpVisuals)
+breakerCol  = input.color(color.new(color.yellow,  70), "Breaker",  group=grpVisuals)
+liqCol      = input.color(color.new(color.aqua,    0),  "Liquidity",group=grpVisuals)
+liqSweptCol = input.color(color.new(color.gray,    50), "Swept Liquidity", group=grpVisuals)
+oteCol      = input.color(color.new(color.orange,  85), "OTE Zone", group=grpVisuals)
+mssBullCol  = input.color(color.new(color.lime,    0),  "Bullish MSS Label", group=grpVisuals)
+mssBearCol  = input.color(color.new(color.red,     0),  "Bearish MSS Label", group=grpVisuals)
+
+// Dashboard
+showDashboard = input.bool(true, "Show Dashboard", group=grpDashboard)
+dashPos       = input.string("Top Right", "Dashboard Position", options=["Top Right","Top Left","Bottom Right","Bottom Left"], group=grpDashboard)
+
+// ============================================================================
+// USER-DEFINED TYPES
+// ============================================================================
+type Swing
+    int   bar     = 0
+    float price   = 0.0
+    bool  isHigh  = false
+    bool  swept   = false
+
+type LiquidityPool
+    string kind        = ""
+    float  price       = 0.0
+    int    bar         = 0
+    bool   swept       = false
+    int    piercedBar  = na
+    line   ln          = na
+    label  lb          = na
+
+type FVG
+    box   bx       = na
+    float top      = 0.0
+    float bottom   = 0.0
+    float mid      = 0.0
+    int   bar      = 0
+    bool  bullish  = false
+    bool  mitigated= false
+
+type OrderBlock
+    box   bx       = na
+    float top      = 0.0
+    float bottom   = 0.0
+    int   bar      = 0
+    bool  bullish  = false
+    bool  mitigated= false
+
+type Breaker
+    box   bx       = na
+    float top      = 0.0
+    float bottom   = 0.0
+    int   bar      = 0
+    bool  bullish  = false
+    bool  active   = true
+
+// ============================================================================
+// STATE
+// ============================================================================
+var array<Swing>         swings   = array.new<Swing>()
+var array<LiquidityPool> liqs     = array.new<LiquidityPool>()
+var array<FVG>           fvgs     = array.new<FVG>()
+var array<OrderBlock>    obs      = array.new<OrderBlock>()
+var array<Breaker>       breakers = array.new<Breaker>()
+
+// Most-recent structural references
+var float lastHi    = na
+var int   lastHiBar = na
+var float lastLo    = na
+var int   lastLoBar = na
+var float prevHi    = na
+var float prevLo    = na
+var int   trendDir  = 0   // 1 bull, -1 bear, 0 neutral
+
+// Recency markers (bar index of last occurrence)
+var int lastBullMss   = na
+var int lastBearMss   = na
+var int lastBullSweep = na
+var int lastBearSweep = na
+var int lastBullDisp  = na
+var int lastBearDisp  = na
+
+// Performance accumulators
+var int   longCount    = 0
+var int   shortCount   = 0
+var float rrSum        = 0.0
+var int   rrCount      = 0
+var int   holdBarsSum  = 0
+var int   entryBar     = na
+var float lastEntry    = na
+var float lastSL       = na
+var float lastTP       = na
+var int   lastDir      = 0
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+tickSz  = syminfo.mintick
+atrVal  = ta.atr(atrLen)
+rrNum   = rrChoice == "1:1" ? 1.0 : rrChoice == "1:2" ? 2.0 : rrChoice == "1:3" ? 3.0 : rrChoice == "1:4" ? 4.0 : 5.0
+riskPct = str.tonumber(riskPctStr)
+
+f_inSession(s, tz) =>
+    not na(time(timeframe.period, s, tz))
+
+inLondon = tradeLondon and f_inSession(londonSess, londonTz)
+inNY     = tradeNY     and f_inSession(nySess,     nyTz)
+inPM     = tradePM     and f_inSession(pmSess,     nyTz)
+inAnySess = (not useSessionFilter) or inLondon or inNY or inPM
+
+sessionLabel() =>
+    inLondon ? "London" : inNY ? "New York" : inPM ? "PM Reversal" : "Off"
+
+// ============================================================================
+// HTF BIAS
+// HTF close above the most recent confirmed HTF pivot high  -> bull bias.
+// HTF close below the most recent confirmed HTF pivot low   -> bear bias.
+// lookahead_off + indexing on confirmed pivots prevents repaint.
+// ============================================================================
+f_htfBias() =>
+    [hc, ph, pl] = request.security(syminfo.tickerid, htfRes,
+                       [close, ta.pivothigh(3, 3), ta.pivotlow(3, 3)],
+                       lookahead = barmerge.lookahead_off)
+    var float lastPh = na
+    var float lastPl = na
+    if not na(ph)
+        lastPh := ph
+    if not na(pl)
+        lastPl := pl
+    var int bias = 0
+    if not na(hc) and not na(lastPh) and hc > lastPh
+        bias := 1
+    if not na(hc) and not na(lastPl) and hc < lastPl
+        bias := -1
+    bias
+
+htfBias = useHtfBias ? f_htfBias() : 0
+
+// ============================================================================
+// STRUCTURE — pivots, BOS, MSS, CHoCH
+// MSS = liquidity sweep + structural reversal break.
+// BOS = continuation break in the prevailing direction.
+// CHoCH = first counter-trend break (treated identically to MSS here, the
+//   sweep precondition is the differentiator vs a plain reversal).
+// ============================================================================
+ph = ta.pivothigh(pivotLen, pivotLen)
+pl = ta.pivotlow(pivotLen,  pivotLen)
+
+bullMSS = false
+bearMSS = false
+bullBOS = false
+bearBOS = false
+choch   = false
+
+if not na(ph)
+    prevHi := lastHi
+    lastHi := ph
+    lastHiBar := bar_index - pivotLen
+    s = Swing.new(bar=lastHiBar, price=lastHi, isHigh=true)
+    array.push(swings, s)
+    if array.size(swings) > 60
+        array.shift(swings)
+
+if not na(pl)
+    prevLo := lastLo
+    lastLo := pl
+    lastLoBar := bar_index - pivotLen
+    s = Swing.new(bar=lastLoBar, price=lastLo, isHigh=false)
+    array.push(swings, s)
+    if array.size(swings) > 60
+        array.shift(swings)
+
+// Break detection — close-through last confirmed pivot.
+brokeHi = not na(lastHi) and close > lastHi and close[1] <= lastHi
+brokeLo = not na(lastLo) and close < lastLo and close[1] >= lastLo
+
+// Sweep recency at MSS-decision time looks at prior bars only — the sweep
+// must precede the structural break.
+priorBullSweep = not na(lastBullSweep) and (bar_index - lastBullSweep) <= confluenceLookback
+priorBearSweep = not na(lastBearSweep) and (bar_index - lastBearSweep) <= confluenceLookback
+
+// MSS = structure break that follows a recent sweep, regardless of the prior
+// trendDir (which is 0 / not yet established on the early bars and would
+// otherwise gate MSS off entirely). BOS otherwise. CHoCH = MSS against prior
+// established trend.
+if brokeHi
+    if priorBullSweep
+        bullMSS := true
+        lastBullMss := bar_index
+        choch := trendDir == -1
+    else
+        bullBOS := true
+    trendDir := 1
+
+if brokeLo
+    if priorBearSweep
+        bearMSS := true
+        lastBearMss := bar_index
+        choch := trendDir == 1
+    else
+        bearBOS := true
+    trendDir := -1
+
+// ============================================================================
+// LIQUIDITY POOLS
+// EQH/EQL — successive pivots within tolerance.
+// PDH/PDL, Weekly H/L — request.security with lookahead_off.
+// Asian H/L — tracked intraday on chart timeframe, locked when session ends.
+// Session H/L — current killzone extremes, locked at close of killzone.
+// ============================================================================
+f_addPool(kind, price, bar) =>
+    if not na(price)
+        // skip duplicates within 1 tick
+        dup = false
+        if array.size(liqs) > 0
+            for i = 0 to array.size(liqs) - 1
+                p = array.get(liqs, i)
+                if p.kind == kind and math.abs(p.price - price) < tickSz
+                    dup := true
+                    break
+        if not dup
+            ln  = showLiquidity ? line.new(bar, price, bar_index, price, xloc=xloc.bar_index, color=liqCol, style=line.style_dotted, extend=extend.right) : na
+            lb  = showLiquidity ? label.new(bar_index, price, kind, xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.black, 100), textcolor=liqCol, style=label.style_label_left, size=size.tiny) : na
+            p   = LiquidityPool.new(kind=kind, price=price, bar=bar, ln=ln, lb=lb)
+            array.push(liqs, p)
+            if array.size(liqs) > maxLiq
+                old = array.shift(liqs)
+                if not na(old.ln)
+                    line.delete(old.ln)
+                if not na(old.lb)
+                    label.delete(old.lb)
+
+// Equal Highs / Lows — compare last two pivots of same kind within tick tolerance.
+if trackEqHL and not na(ph) and not na(prevHi)
+    if math.abs(ph - prevHi) <= eqTickTol * tickSz
+        f_addPool("EQH", math.max(ph, prevHi), bar_index - pivotLen)
+
+if trackEqHL and not na(pl) and not na(prevLo)
+    if math.abs(pl - prevLo) <= eqTickTol * tickSz
+        f_addPool("EQL", math.min(pl, prevLo), bar_index - pivotLen)
+
+// PDH / PDL — ta.change() hoisted to global scope so it evaluates every bar.
+pdh        = request.security(syminfo.tickerid, "D", high[1], lookahead=barmerge.lookahead_off)
+pdl        = request.security(syminfo.tickerid, "D", low[1],  lookahead=barmerge.lookahead_off)
+newDayBar  = ta.change(time("D")) != 0
+if trackPDHL and newDayBar
+    f_addPool("PDH", pdh, bar_index)
+    f_addPool("PDL", pdl, bar_index)
+
+// Weekly H/L
+wkh        = request.security(syminfo.tickerid, "W", high[1], lookahead=barmerge.lookahead_off)
+wkl        = request.security(syminfo.tickerid, "W", low[1],  lookahead=barmerge.lookahead_off)
+newWeekBar = ta.change(time("W")) != 0
+if trackWeekly and newWeekBar
+    f_addPool("WkH", wkh, bar_index)
+    f_addPool("WkL", wkl, bar_index)
+
+// Asian session tracker — locks high/low on session close.
+var float asHi  = na
+var float asLo  = na
+var bool  wasAs = false
+inAs = trackAsian and f_inSession(asianStart, asianTz)
+if inAs
+    if not wasAs
+        asHi := high
+        asLo := low
+    else
+        asHi := math.max(asHi, high)
+        asLo := math.min(asLo, low)
+if (not inAs) and wasAs
+    f_addPool("AsianH", asHi, bar_index - 1)
+    f_addPool("AsianL", asLo, bar_index - 1)
+    asHi := na
+    asLo := na
+wasAs := inAs
+
+// Sweep detection — multi-bar tolerant. A sweep = recent pierce of the pool
+// followed by a close back through. Pierce can be on the current bar (same-bar
+// hammer sweep) or up to sweepWindow bars earlier (multi-bar sweep).
+bullSweep = false
+bearSweep = false
+if array.size(liqs) > 0
+    for i = array.size(liqs) - 1 to 0
+        p = array.get(liqs, i)
+        if not p.swept
+            isLowKind  = p.kind == "EQL" or p.kind == "PDL" or p.kind == "AsianL" or p.kind == "WkL"
+            isHighKind = p.kind == "EQH" or p.kind == "PDH" or p.kind == "AsianH" or p.kind == "WkH"
+            // Update most recent pierce bar for this pool
+            if isLowKind and low < p.price
+                p.piercedBar := bar_index
+            if isHighKind and high > p.price
+                p.piercedBar := bar_index
+            // Detect close-back-through within sweepWindow bars of the pierce
+            pierceFresh = not na(p.piercedBar) and (bar_index - p.piercedBar) <= sweepWindow
+            if isLowKind and pierceFresh and close > p.price
+                p.swept := true
+                bullSweep := true
+                lastBullSweep := bar_index
+                if not na(p.ln)
+                    line.set_color(p.ln, liqSweptCol)
+                if not na(p.lb)
+                    label.set_textcolor(p.lb, liqSweptCol)
+            if isHighKind and pierceFresh and close < p.price
+                p.swept := true
+                bearSweep := true
+                lastBearSweep := bar_index
+                if not na(p.ln)
+                    line.set_color(p.ln, liqSweptCol)
+                if not na(p.lb)
+                    label.set_textcolor(p.lb, liqSweptCol)
+
+// ============================================================================
+// DISPLACEMENT — body > ATR * mult and close near extreme of range.
+// ============================================================================
+candleBody  = math.abs(close - open)
+candleRange = high - low
+bullDisp = close > open and candleBody > atrVal * dispMult and (high - close) <= candleRange * dispClose
+bearDisp = close < open and candleBody > atrVal * dispMult and (close - low)  <= candleRange * dispClose
+
+if bullDisp
+    lastBullDisp := bar_index
+if bearDisp
+    lastBearDisp := bar_index
+
+// ============================================================================
+// FAIR VALUE GAPS — 3-candle imbalance. Drawn at bar [1] to avoid future leak.
+// ============================================================================
+makeFvg(bullish, top, bottom) =>
+    bx = showFvg ? box.new(bar_index - 1, top, bar_index + 1, bottom,
+                            border_color = na,
+                            bgcolor      = bullish ? bullFvgCol : bearFvgCol,
+                            extend       = extend.right) : na
+    f = FVG.new(bx=bx, top=top, bottom=bottom, mid=(top+bottom)/2, bar=bar_index - 1, bullish=bullish)
+    array.push(fvgs, f)
+    if array.size(fvgs) > maxFvg
+        old = array.shift(fvgs)
+        if not na(old.bx)
+            box.delete(old.bx)
+
+// Bullish FVG: low[0] > high[2]  (gap between high[2] and low[0])
+if low > high[2]
+    makeFvg(true, low, high[2])
+// Bearish FVG: high[0] < low[2]
+if high < low[2]
+    makeFvg(false, low[2], high)
+
+// FVG mitigation
+if array.size(fvgs) > 0
+    for i = array.size(fvgs) - 1 to 0
+        f = array.get(fvgs, i)
+        if not f.mitigated
+            touched = false
+            if f.bullish
+                if fvgEntryMode == "First Touch"
+                    touched := low <= f.top
+                else if fvgEntryMode == "Midpoint"
+                    touched := low <= f.mid
+                else
+                    touched := close < f.bottom
+            else
+                if fvgEntryMode == "First Touch"
+                    touched := high >= f.bottom
+                else if fvgEntryMode == "Midpoint"
+                    touched := high >= f.mid
+                else
+                    touched := close > f.top
+            if touched
+                f.mitigated := true
+
+// ============================================================================
+// ORDER BLOCKS — last opposite-color candle before the displacement bar.
+// ============================================================================
+makeOb(bullish, top, bottom, b) =>
+    bx = showOb ? box.new(b, top, bar_index + 1, bottom,
+                           border_color = bullish ? color.new(color.teal, 30) : color.new(color.fuchsia, 30),
+                           bgcolor      = bullish ? bullObCol : bearObCol,
+                           extend       = extend.right) : na
+    o = OrderBlock.new(bx=bx, top=top, bottom=bottom, bar=b, bullish=bullish)
+    array.push(obs, o)
+    if array.size(obs) > maxOb
+        old = array.shift(obs)
+        if not na(old.bx)
+            box.delete(old.bx)
+
+// Scan back up to 5 bars for the last opposite-color candle preceding displacement.
+if bullDisp
+    for j = 1 to 5
+        if close[j] < open[j]
+            top    = obMode == "Body" ? math.max(open[j], close[j]) : high[j]
+            bottom = obMode == "Body" ? math.min(open[j], close[j]) : low[j]
+            makeOb(true, top, bottom, bar_index - j)
+            break
+
+if bearDisp
+    for j = 1 to 5
+        if close[j] > open[j]
+            top    = obMode == "Body" ? math.max(open[j], close[j]) : high[j]
+            bottom = obMode == "Body" ? math.min(open[j], close[j]) : low[j]
+            makeOb(false, top, bottom, bar_index - j)
+            break
+
+// OB mitigation — close beyond the zone in the opposite direction.
+if array.size(obs) > 0
+    for i = array.size(obs) - 1 to 0
+        o = array.get(obs, i)
+        if not o.mitigated
+            invalidated = o.bullish ? close < o.bottom : close > o.top
+            if invalidated
+                o.mitigated := true
+
+// ============================================================================
+// BREAKER BLOCKS — when an OB is invalidated AND structure flips, the zone
+// becomes a breaker with inverted polarity.
+// ============================================================================
+makeBreaker(bullish, top, bottom, b) =>
+    bx = showBreaker ? box.new(b, top, bar_index + 1, bottom,
+                                border_color = breakerCol,
+                                bgcolor      = breakerCol,
+                                extend       = extend.right) : na
+    br = Breaker.new(bx=bx, top=top, bottom=bottom, bar=b, bullish=bullish)
+    array.push(breakers, br)
+    if array.size(breakers) > maxBreaker
+        old = array.shift(breakers)
+        if not na(old.bx)
+            box.delete(old.bx)
+
+if bullMSS and array.size(obs) > 0
+    // Recent bearish OB that was just invalidated -> bullish breaker.
+    for i = array.size(obs) - 1 to 0
+        o = array.get(obs, i)
+        if (not o.bullish) and o.mitigated and (bar_index - o.bar) <= confluenceLookback * 2
+            makeBreaker(true, o.top, o.bottom, o.bar)
+            break
+
+if bearMSS and array.size(obs) > 0
+    for i = array.size(obs) - 1 to 0
+        o = array.get(obs, i)
+        if o.bullish and o.mitigated and (bar_index - o.bar) <= confluenceLookback * 2
+            makeBreaker(false, o.top, o.bottom, o.bar)
+            break
+
+// Breaker mitigation — closes beyond the zone disable it.
+if array.size(breakers) > 0
+    for i = array.size(breakers) - 1 to 0
+        br = array.get(breakers, i)
+        if br.active
+            invalid = br.bullish ? close < br.bottom : close > br.top
+            if invalid
+                br.active := false
+
+// ============================================================================
+// OTE + PREMIUM / DISCOUNT — measured against most recent confirmed swing leg.
+// ============================================================================
+f_recentLeg(dir) =>
+    // dir = 1 for bullish leg (low -> high), -1 for bearish leg (high -> low)
+    float hi = na
+    float lo = na
+    int   hb = na
+    int   lb = na
+    n = array.size(swings)
+    if n >= 2
+        for i = n - 1 to math.max(0, n - 10)
+            s = array.get(swings, i)
+            if dir == 1
+                if s.isHigh and na(hi)
+                    hi := s.price
+                    hb := s.bar
+                if (not s.isHigh) and not na(hi) and na(lo)
+                    lo := s.price
+                    lb := s.bar
+                    break
+            else
+                if (not s.isHigh) and na(lo)
+                    lo := s.price
+                    lb := s.bar
+                if s.isHigh and not na(lo) and na(hi)
+                    hi := s.price
+                    hb := s.bar
+                    break
+    [hi, lo, hb, lb]
+
+[bullHi, bullLo, _bhb, _blb] = f_recentLeg(1)
+[bearHi, bearLo, _bhb2, _blb2] = f_recentLeg(-1)
+
+// Bullish OTE — retracement of low->high leg
+bullFibA = na(bullHi) or na(bullLo) ? na : bullHi - (bullHi - bullLo) * fibA
+bullFibB = na(bullHi) or na(bullLo) ? na : bullHi - (bullHi - bullLo) * fibB
+bullFibC = na(bullHi) or na(bullLo) ? na : bullHi - (bullHi - bullLo) * fibC
+bullEq   = na(bullHi) or na(bullLo) ? na : (bullHi + bullLo) / 2
+
+// Bearish OTE — retracement of high->low leg (price moves UP into premium zone)
+bearFibA = na(bearHi) or na(bearLo) ? na : bearLo + (bearHi - bearLo) * fibA
+bearFibB = na(bearHi) or na(bearLo) ? na : bearLo + (bearHi - bearLo) * fibB
+bearFibC = na(bearHi) or na(bearLo) ? na : bearLo + (bearHi - bearLo) * fibC
+bearEq   = na(bearHi) or na(bearLo) ? na : (bearHi + bearLo) / 2
+
+inBullOte = (not useOte) or (not na(bullFibA) and close <= bullFibA and close >= bullFibC)
+inBearOte = (not useOte) or (not na(bearFibA) and close >= bearFibA and close <= bearFibC)
+
+isDiscount = (not usePremDisc) or (not na(bullEq) and close < bullEq)
+isPremium  = (not usePremDisc) or (not na(bearEq) and close > bearEq)
+
+// ============================================================================
+// CONFLUENCE
+// ============================================================================
+// Recompute sweep recency with the latest state (sweep may have fired this
+// bar after the structure section already ran).
+bullSweepRecent = not na(lastBullSweep) and (bar_index - lastBullSweep) <= confluenceLookback
+bearSweepRecent = not na(lastBearSweep) and (bar_index - lastBearSweep) <= confluenceLookback
+mssBullRecent   = not na(lastBullMss)   and (bar_index - lastBullMss)   <= confluenceLookback
+mssBearRecent   = not na(lastBearMss)   and (bar_index - lastBearMss)   <= confluenceLookback
+dispBullRecent  = not na(lastBullDisp)  and (bar_index - lastBullDisp)  <= confluenceLookback
+dispBearRecent  = not na(lastBearDisp)  and (bar_index - lastBearDisp)  <= confluenceLookback
+
+f_priceInActiveBullZone() =>
+    inZone = false
+    if array.size(fvgs) > 0
+        for i = array.size(fvgs) - 1 to 0
+            f = array.get(fvgs, i)
+            if f.bullish and not f.mitigated and low <= f.top and high >= f.bottom
+                inZone := true
+                break
+    if not inZone and array.size(obs) > 0
+        for i = array.size(obs) - 1 to 0
+            o = array.get(obs, i)
+            if o.bullish and not o.mitigated and low <= o.top and high >= o.bottom
+                inZone := true
+                break
+    if not inZone and array.size(breakers) > 0
+        for i = array.size(breakers) - 1 to 0
+            br = array.get(breakers, i)
+            if br.bullish and br.active and low <= br.top and high >= br.bottom
+                inZone := true
+                break
+    inZone
+
+f_priceInActiveBearZone() =>
+    inZone = false
+    if array.size(fvgs) > 0
+        for i = array.size(fvgs) - 1 to 0
+            f = array.get(fvgs, i)
+            if (not f.bullish) and not f.mitigated and high >= f.bottom and low <= f.top
+                inZone := true
+                break
+    if not inZone and array.size(obs) > 0
+        for i = array.size(obs) - 1 to 0
+            o = array.get(obs, i)
+            if (not o.bullish) and not o.mitigated and high >= o.bottom and low <= o.top
+                inZone := true
+                break
+    if not inZone and array.size(breakers) > 0
+        for i = array.size(breakers) - 1 to 0
+            br = array.get(breakers, i)
+            if (not br.bullish) and br.active and high >= br.bottom and low <= br.top
+                inZone := true
+                break
+    inZone
+
+longSetup  = bullSweepRecent and mssBullRecent and dispBullRecent and f_priceInActiveBullZone() and inBullOte and isDiscount and inAnySess and (not useHtfBias or htfBias >= 0)
+shortSetup = bearSweepRecent and mssBearRecent and dispBearRecent and f_priceInActiveBearZone() and inBearOte and isPremium  and inAnySess and (not useHtfBias or htfBias <= 0)
+
+// ============================================================================
+// RISK MANAGEMENT — SL, TP, sizing
+// ============================================================================
+f_sweepRefLow() =>
+    refLow = low
+    if array.size(liqs) > 0
+        for i = array.size(liqs) - 1 to 0
+            p = array.get(liqs, i)
+            if p.swept and (bar_index - p.bar) <= confluenceLookback * 3
+                isLowKind = p.kind == "EQL" or p.kind == "PDL" or p.kind == "AsianL" or p.kind == "WkL"
+                if isLowKind
+                    refLow := math.min(refLow, p.price)
+                    break
+    refLow
+
+f_sweepRefHigh() =>
+    refHi = high
+    if array.size(liqs) > 0
+        for i = array.size(liqs) - 1 to 0
+            p = array.get(liqs, i)
+            if p.swept and (bar_index - p.bar) <= confluenceLookback * 3
+                isHighKind = p.kind == "EQH" or p.kind == "PDH" or p.kind == "AsianH" or p.kind == "WkH"
+                if isHighKind
+                    refHi := math.max(refHi, p.price)
+                    break
+    refHi
+
+f_nextOppLiquidity(longSide) =>
+    // For longs: nearest untaken high-kind pool above price.
+    // For shorts: nearest untaken low-kind pool below price.
+    float target = na
+    if array.size(liqs) > 0
+        float bestDist = 1e10
+        for i = 0 to array.size(liqs) - 1
+            p = array.get(liqs, i)
+            if not p.swept
+                isHighKind = p.kind == "EQH" or p.kind == "PDH" or p.kind == "AsianH" or p.kind == "WkH"
+                isLowKind  = p.kind == "EQL" or p.kind == "PDL" or p.kind == "AsianL" or p.kind == "WkL"
+                if longSide and isHighKind and p.price > close
+                    d = p.price - close
+                    if d < bestDist
+                        bestDist := d
+                        target := p.price
+                if (not longSide) and isLowKind and p.price < close
+                    d = close - p.price
+                    if d < bestDist
+                        bestDist := d
+                        target := p.price
+    target
+
+f_nextOppFvg(longSide) =>
+    float target = na
+    if array.size(fvgs) > 0
+        float bestDist = 1e10
+        for i = 0 to array.size(fvgs) - 1
+            f = array.get(fvgs, i)
+            if not f.mitigated
+                if longSide and (not f.bullish) and f.mid > close
+                    d = f.mid - close
+                    if d < bestDist
+                        bestDist := d
+                        target := f.mid
+                if (not longSide) and f.bullish and f.mid < close
+                    d = close - f.mid
+                    if d < bestDist
+                        bestDist := d
+                        target := f.mid
+    target
+
+f_takeProfit(longSide, entry, sl) =>
+    rrTp = longSide ? entry + (entry - sl) * rrNum : entry - (sl - entry) * rrNum
+    tp = rrTp
+    if tpMode == "Liquidity Target"
+        opp = f_nextOppLiquidity(longSide)
+        if not na(opp)
+            tp := opp
+    if tpMode == "Opposing FVG"
+        opp = f_nextOppFvg(longSide)
+        if not na(opp)
+            tp := opp
+    tp
+
+f_riskQty(slDist) =>
+    pointValue = syminfo.pointvalue
+    if slDist <= 0 or na(slDist)
+        0.0
+    else
+        riskCash = strategy.equity * (riskPct / 100.0)
+        // tickSz price units per tick * pointValue per 1.0 price unit -> per-tick value
+        perUnitRisk = slDist * pointValue
+        perUnitRisk > 0 ? riskCash / perUnitRisk : 0.0
+
+// ============================================================================
+// ENTRIES / EXITS
+// ============================================================================
+var line lnEn = na
+var line lnSl = na
+var line lnTp = na
+
+canTrade = strategy.position_size == 0 and barstate.isconfirmed
+
+if canTrade and longSetup
+    sl = f_sweepRefLow() - slBufTicks * tickSz
+    en = close
+    if sl < en
+        tp = f_takeProfit(true, en, sl)
+        qty = f_riskQty(en - sl)
+        if qty > 0
+            strategy.entry("Long", strategy.long, qty = qty)
+            strategy.exit("Long-X", from_entry = "Long", stop = sl, limit = tp)
+            longCount += 1
+            entryBar  := bar_index
+            lastEntry := en
+            lastSL    := sl
+            lastTP    := tp
+            lastDir   := 1
+            rrSum     += (tp - en) / math.max(en - sl, tickSz)
+            rrCount   += 1
+            if showAllVisuals
+                if not na(lnEn)
+                    line.delete(lnEn)
+                if not na(lnSl)
+                    line.delete(lnSl)
+                if not na(lnTp)
+                    line.delete(lnTp)
+                lnEn := line.new(bar_index, en, bar_index + 1, en, color=color.white, style=line.style_dashed, width=1, extend=extend.right)
+                lnSl := line.new(bar_index, sl, bar_index + 1, sl, color=color.red,   style=line.style_dotted, width=1, extend=extend.right)
+                lnTp := line.new(bar_index, tp, bar_index + 1, tp, color=color.green, style=line.style_dotted, width=1, extend=extend.right)
+
+if canTrade and shortSetup
+    sl = f_sweepRefHigh() + slBufTicks * tickSz
+    en = close
+    if sl > en
+        tp = f_takeProfit(false, en, sl)
+        qty = f_riskQty(sl - en)
+        if qty > 0
+            strategy.entry("Short", strategy.short, qty = qty)
+            strategy.exit("Short-X", from_entry = "Short", stop = sl, limit = tp)
+            shortCount += 1
+            entryBar  := bar_index
+            lastEntry := en
+            lastSL    := sl
+            lastTP    := tp
+            lastDir   := -1
+            rrSum     += (en - tp) / math.max(sl - en, tickSz)
+            rrCount   += 1
+            if showAllVisuals
+                if not na(lnEn)
+                    line.delete(lnEn)
+                if not na(lnSl)
+                    line.delete(lnSl)
+                if not na(lnTp)
+                    line.delete(lnTp)
+                lnEn := line.new(bar_index, en, bar_index + 1, en, color=color.white, style=line.style_dashed, width=1, extend=extend.right)
+                lnSl := line.new(bar_index, sl, bar_index + 1, sl, color=color.red,   style=line.style_dotted, width=1, extend=extend.right)
+                lnTp := line.new(bar_index, tp, bar_index + 1, tp, color=color.green, style=line.style_dotted, width=1, extend=extend.right)
+
+// Track hold time on close
+if strategy.position_size == 0 and not na(entryBar)
+    holdBarsSum += (bar_index - entryBar)
+    entryBar := na
+
+// ============================================================================
+// VISUALS — MSS / BOS / CHoCH / entry markers
+// ============================================================================
+if showAllVisuals and showMss and bullMSS
+    label.new(bar_index, low, "MSS↑", xloc=xloc.bar_index, yloc=yloc.belowbar, color=mssBullCol, textcolor=color.black, style=label.style_label_up, size=size.small)
+if showAllVisuals and showMss and bearMSS
+    label.new(bar_index, high, "MSS↓", xloc=xloc.bar_index, yloc=yloc.abovebar, color=mssBearCol, textcolor=color.white, style=label.style_label_down, size=size.small)
+if showAllVisuals and showMss and bullBOS
+    label.new(bar_index, low, "BOS↑", xloc=xloc.bar_index, yloc=yloc.belowbar, color=color.new(color.green, 40), textcolor=color.white, style=label.style_label_up, size=size.tiny)
+if showAllVisuals and showMss and bearBOS
+    label.new(bar_index, high, "BOS↓", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.red, 40),   textcolor=color.white, style=label.style_label_down, size=size.tiny)
+
+plotshape(longSetup,  title="Long Entry",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.small)
+plotshape(shortSetup, title="Short Entry", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),  size=size.small)
+
+// OTE zone shading (shaded only when the leg is valid)
+plotBullOteHi = useOte and showOte and showAllVisuals and not na(bullFibA) ? bullFibA : na
+plotBullOteLo = useOte and showOte and showAllVisuals and not na(bullFibC) ? bullFibC : na
+plotBearOteHi = useOte and showOte and showAllVisuals and not na(bearFibC) ? bearFibC : na
+plotBearOteLo = useOte and showOte and showAllVisuals and not na(bearFibA) ? bearFibA : na
+
+p1 = plot(plotBullOteHi, "Bull OTE Hi", color=color.new(color.orange, 70))
+p2 = plot(plotBullOteLo, "Bull OTE Lo", color=color.new(color.orange, 70))
+p3 = plot(plotBearOteHi, "Bear OTE Hi", color=color.new(color.orange, 70))
+p4 = plot(plotBearOteLo, "Bear OTE Lo", color=color.new(color.orange, 70))
+fill(p1, p2, color=oteCol, title="Bull OTE")
+fill(p3, p4, color=oteCol, title="Bear OTE")
+
+// ============================================================================
+// ALERTS — alert() works inside strategies; alertcondition() does not.
+// Configure once via "Create Alert" → "Any alert() function call".
+// ============================================================================
+if bullMSS
+    alert("ICT: Bullish MSS confirmed", alert.freq_once_per_bar_close)
+if bearMSS
+    alert("ICT: Bearish MSS confirmed", alert.freq_once_per_bar_close)
+if bullSweep
+    alert("ICT: Bullish liquidity sweep — lows swept, close back above", alert.freq_once_per_bar_close)
+if bearSweep
+    alert("ICT: Bearish liquidity sweep — highs swept, close back below", alert.freq_once_per_bar_close)
+if longSetup
+    alert("ICT: Long entry conditions met", alert.freq_once_per_bar_close)
+if shortSetup
+    alert("ICT: Short entry conditions met", alert.freq_once_per_bar_close)
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    alert("ICT: Position closed (TP or SL filled)", alert.freq_once_per_bar_close)
+
+// ============================================================================
+// DASHBOARD
+// ============================================================================
+f_pos() =>
+    pos = dashPos == "Top Right" ? position.top_right : dashPos == "Top Left" ? position.top_left : dashPos == "Bottom Right" ? position.bottom_right : position.bottom_left
+    pos
+
+var table dash = na
+// bar_index == last_bar_index draws only on the most recent confirmed bar —
+// equivalent to barstate.islast without the calc_on_every_tick warning.
+if showDashboard and bar_index == last_bar_index
+    if not na(dash)
+        table.delete(dash)
+    dash := table.new(f_pos(), 2, 11, frame_color=color.new(color.gray, 60), frame_width=1, border_width=1, border_color=color.new(color.gray, 80), bgcolor=color.new(color.black, 80))
+    closed = strategy.closedtrades
+    winR   = closed > 0 ? strategy.wintrades / closed * 100 : 0.0
+    pf     = strategy.grossloss != 0 ? strategy.grossprofit / math.abs(strategy.grossloss) : 0.0
+    avgRR  = rrCount > 0 ? rrSum / rrCount : 0.0
+    avgHld = closed > 0 ? holdBarsSum / closed : 0
+    biasS  = htfBias > 0 ? "Bullish" : htfBias < 0 ? "Bearish" : "Neutral"
+    stateS = bullMSS ? "Bull MSS" : bearMSS ? "Bear MSS" : bullBOS ? "Bull BOS" : bearBOS ? "Bear BOS" : trendDir == 1 ? "Bullish" : trendDir == -1 ? "Bearish" : "Range"
+
+    table.cell(dash, 0, 0,  "ICT SMC",        text_color=color.white,  bgcolor=color.new(color.blue, 50), text_size=size.small)
+    table.cell(dash, 1, 0,  syminfo.ticker,   text_color=color.white,  bgcolor=color.new(color.blue, 50), text_size=size.small)
+    table.cell(dash, 0, 1,  "Win Rate",       text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 1,  str.tostring(winR, "#.##") + " %", text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 2,  "Profit Factor",  text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 2,  str.tostring(pf, "#.##"), text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 3,  "Avg RR",         text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 3,  str.tostring(avgRR, "#.##"), text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 4,  "Total Trades",   text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 4,  str.tostring(closed), text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 5,  "Long / Short",   text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 5,  str.tostring(longCount) + " / " + str.tostring(shortCount), text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 6,  "Avg Hold (bars)",text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 6,  str.tostring(avgHld), text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 7,  "HTF Bias",       text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 7,  biasS,            text_color=htfBias > 0 ? color.lime : htfBias < 0 ? color.red : color.gray, text_size=size.small)
+    table.cell(dash, 0, 8,  "Session",        text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 8,  sessionLabel(),   text_color=inAnySess ? color.lime : color.gray, text_size=size.small)
+    table.cell(dash, 0, 9,  "Market State",   text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 9,  stateS,           text_color=color.white,  text_size=size.small)
+    table.cell(dash, 0, 10, "Risk / RR",      text_color=color.silver, text_size=size.small)
+    table.cell(dash, 1, 10, riskPctStr + "% / " + rrChoice, text_color=color.white, text_size=size.small)
